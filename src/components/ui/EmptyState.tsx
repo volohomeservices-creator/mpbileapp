@@ -18,16 +18,16 @@ export function EmptyState({
   onAction,
 }: EmptyStateProps) {
   return (
-    <View className="flex-1 items-center justify-center p-6 bg-slate-950">
-      <View className="w-16 h-16 bg-slate-900 rounded-2xl items-center justify-center mb-6 border border-slate-800">
-        <Ionicons name={icon as any} size={32} color="#64748b" />
+    <View className="flex-1 items-center justify-center p-8 bg-transparent">
+      <View className="w-16 h-16 bg-background-secondary rounded-3xl items-center justify-center mb-6 border border-border-secondary">
+        <Ionicons name={icon as any} size={28} color="rgb(var(--primary))" />
       </View>
-      <Text className="text-white text-lg font-bold text-center mb-2">{title}</Text>
-      <Text className="text-slate-400 text-sm text-center mb-8 leading-5 max-w-[280px]">
+      <Text className="text-text-primary text-base font-extrabold text-center mb-2">{title}</Text>
+      <Text className="text-text-secondary text-xs text-center mb-6 leading-5 max-w-[280px]">
         {message}
       </Text>
       {onAction && actionLabel ? (
-        <Button label={actionLabel} variant="primary" onPress={onAction} className="min-w-[140px]" />
+        <Button label={actionLabel} variant="primary" onPress={onAction} className="min-w-[160px]" />
       ) : null}
     </View>
   );

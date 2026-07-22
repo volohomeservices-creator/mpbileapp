@@ -11,18 +11,32 @@ import {
 import { useState, useRef, useEffect } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import auth from '@react-native-firebase/auth';
-import messaging from '@react-native-firebase/messaging';
-import { verifyFirebaseToken } from '@/api/auth';
+import { verifyFirebaseToken, setPin } from '@/api/auth';
 import { useAuthStore } from '@/features/auth/authStore';
 import { registerDeviceToken } from '@/api/deviceTokens';
 import { OtpSchema } from '@volo/shared-types';
+import { Ionicons } from '@expo/vector-icons';
+import { Button } from '@/components/ui/Button';
+
+// Dynamic loaders to prevent web crash
+const getNativeAuth = () => {
+  if (Platform.OS === 'web') return null;
+  const moduleName = '@react-native-firebase/auth';
+  return require(moduleName).default;
+};
+
+const getNativeMessaging = () => {
+  if (Platform.OS === 'web') return null;
+  const moduleName = '@react-native-firebase/messaging';
+  return require(moduleName).default;
+};
 
 export default function OtpVerifyScreen() {
   const router = useRouter();
   const { phone, role } = useLocalSearchParams<{ phone: string; role: 'customer' | 'worker' }>();
   const { setAuth } = useAuthStore();
 
+  // OTP State
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(true);
@@ -30,6 +44,12 @@ export default function OtpVerifyScreen() {
   const [resendTimer, setResendTimer] = useState(30);
   const inputRefs = useRef<TextInput[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Security PIN Setup State
+  const [showPinSetup, setShowPinSetup] = useState(false);
+  const [newPin, setNewPin] = useState('');
+  const [pinLoading, setPinLoading] = useState(false);
+  const [authResponseData, setAuthResponseData] = useState<any>(null);
 
   // Send OTP via Firebase on mount
   useEffect(() => {
@@ -50,7 +70,15 @@ export default function OtpVerifyScreen() {
   const sendOtp = async () => {
     setSending(true);
     try {
-      const result = await auth().signInWithPhoneNumber(phone);
+      if (Platform.OS === 'web') {
+        const { sendOtpWeb } = require('@/lib/firebase-web');
+        const result = await sendOtpWeb(phone);
+        setConfirmation(result);
+        startResendTimer();
+        return;
+      }
+      const nativeAuth = getNativeAuth();
+      const result = await nativeAuth().signInWithPhoneNumber(phone);
       setConfirmation(result);
       startResendTimer();
     } catch (err: any) {
@@ -62,15 +90,28 @@ export default function OtpVerifyScreen() {
   };
 
   const handleOtpChange = (val: string, idx: number) => {
-    if (!/^\d?$/.test(val)) return;
+    const cleanVal = val.length > 1 ? val.charAt(val.length - 1) : val;
+    if (!/^\d?$/.test(cleanVal)) return;
+
     const next = [...otp];
-    next[idx] = val;
+    next[idx] = cleanVal;
     setOtp(next);
-    if (val && idx < 5) inputRefs.current[idx + 1]?.focus();
-    if (!val && idx > 0) inputRefs.current[idx - 1]?.focus();
-    // Auto-submit when all 6 digits entered
-    if (val && idx === 5 && next.every(Boolean)) {
+
+    if (cleanVal && idx < 5) {
+      inputRefs.current[idx + 1]?.focus();
+    }
+    
+    if (cleanVal && idx === 5 && next.every(Boolean)) {
       verifyOtp(next.join(''));
+    }
+  };
+
+  const handleKeyPress = (e: any, idx: number) => {
+    if (e.nativeEvent.key === 'Backspace' && !otp[idx] && idx > 0) {
+      const next = [...otp];
+      next[idx - 1] = '';
+      setOtp(next);
+      inputRefs.current[idx - 1]?.focus();
     }
   };
 
@@ -92,22 +133,31 @@ export default function OtpVerifyScreen() {
 
       // 3. Persist auth state
       await setAuth(data.token, data.refreshToken, data.user);
+      setAuthResponseData(data);
 
       // 4. Register FCM token (best-effort)
       try {
-        const fcmToken = await messaging().getToken();
-        if (fcmToken) {
-          await registerDeviceToken(fcmToken, Platform.OS as 'android' | 'ios');
+        const nativeMessaging = getNativeMessaging();
+        if (nativeMessaging) {
+          const fcmToken = await nativeMessaging().getToken();
+          if (fcmToken) {
+            await registerDeviceToken(fcmToken, Platform.OS as 'android' | 'ios');
+          }
         }
       } catch (err) {
         console.warn('[FCM] Failed to get/register token during login:', err);
       }
 
-      // 5. Route by role
-      if (data.user.role === 'worker') {
-        router.replace('/(worker)/home');
+      // 5. Check if security PIN configuration is prompted
+      if (data.promptPinSetup) {
+        setShowPinSetup(true);
       } else {
-        router.replace('/(customer)/home');
+        // Direct Route by role
+        if (data.user.role === 'worker') {
+          router.replace('/(worker)/home');
+        } else {
+          router.replace('/(customer)/home');
+        }
       }
     } catch (err: any) {
       const msg = err?.response?.data?.error ?? err.message ?? 'Verification failed.';
@@ -119,76 +169,168 @@ export default function OtpVerifyScreen() {
     }
   };
 
-  return (
-    <SafeAreaView className="flex-1 bg-surface">
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
-        <View className="flex-1 px-6 pt-12 pb-8">
-          {/* Back */}
-          <TouchableOpacity onPress={() => router.back()} className="mb-8">
-            <Text className="text-brand-400 text-base">← Back</Text>
-          </TouchableOpacity>
+  // Submit and save new PIN
+  const handleSavePin = async () => {
+    if (!/^\d{4,6}$/.test(newPin)) {
+      Alert.alert('Invalid PIN', 'PIN must be between 4 and 6 digits.');
+      return;
+    }
 
-          {/* Header */}
-          <Text className="text-white text-3xl font-bold mb-2">Verify OTP</Text>
-          <Text className="text-surface-muted text-base mb-10">
-            We sent a 6-digit code to{' '}
-            <Text className="text-white font-semibold">{phone}</Text>
-          </Text>
+    setPinLoading(true);
+    try {
+      await setPin(newPin);
+      Alert.alert('PIN Configured', 'Your security PIN has been successfully set.');
+      
+      // Redirect
+      if (authResponseData?.user?.role === 'worker') {
+        router.replace('/(worker)/home');
+      } else {
+        router.replace('/(customer)/home');
+      }
+    } catch (err: any) {
+      const errorMsg = err?.response?.data?.error ?? 'Unable to set security PIN. Please try again.';
+      Alert.alert('PIN Configuration Error', errorMsg);
+    } finally {
+      setPinLoading(false);
+    }
+  };
 
-          {sending ? (
-            <View className="items-center py-12">
-              <ActivityIndicator color="#FF7A00" size="large" />
-              <Text className="text-surface-muted mt-4">Sending OTP…</Text>
-            </View>
-          ) : (
-            <>
-              {/* OTP Boxes */}
-              <View className="flex-row justify-between mb-10">
-                {otp.map((digit, idx) => (
+  // RENDER PIN SETUP INTERFACE
+  if (showPinSetup) {
+    return (
+      <SafeAreaView className="flex-1 bg-white">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
+          <View className="flex-1 px-6 pt-12 pb-8 justify-between">
+            <View>
+              {/* Header */}
+              <View className="mb-8 mt-4 items-center">
+                <View className="w-14 h-14 rounded-[20px] bg-primary/10 items-center justify-center mb-4 border border-primary/15">
+                  <Ionicons name="lock-closed" size={22} color="rgb(var(--primary))" />
+                </View>
+                <Text className="text-text-primary text-2xl font-extrabold tracking-tight text-center">Create Security PIN</Text>
+                <Text className="text-text-secondary text-xs mt-2 font-semibold text-center leading-5 px-6">
+                  Set up a 4-to-6 digit security PIN for quick passcode access in the future.
+                </Text>
+              </View>
+
+              {/* Pin Input Box */}
+              <View className="mb-6">
+                <Text className="text-text-secondary text-[10px] mb-2.5 font-bold uppercase tracking-wider text-center">New PIN Code</Text>
+                <View className="flex-row items-center bg-background-secondary border border-border-secondary rounded-2xl px-4 h-14 w-4/5 mx-auto">
                   <TextInput
-                    key={idx}
-                    ref={(r) => { if (r) inputRefs.current[idx] = r; }}
-                    className={`w-12 h-14 rounded-xl border text-center text-white text-xl font-bold bg-surface-card ${
-                      digit ? 'border-brand-500' : 'border-surface-border'
-                    }`}
-                    keyboardType="numeric"
-                    maxLength={1}
-                    value={digit}
-                    onChangeText={(v) => handleOtpChange(v, idx)}
-                    autoFocus={idx === 0}
+                    className="flex-1 text-text-primary text-lg font-mono font-extrabold text-center h-full"
+                    placeholder="••••"
+                    placeholderTextColor="rgb(var(--text-muted))"
+                    keyboardType="number-pad"
+                    secureTextEntry
+                    maxLength={6}
+                    value={newPin}
+                    onChangeText={setNewPin}
                   />
-                ))}
+                </View>
               </View>
 
-              {/* Verify Button */}
-              <TouchableOpacity
-                onPress={() => verifyOtp()}
-                disabled={loading || otp.some((d) => !d)}
-                className={`h-14 rounded-xl items-center justify-center mb-6 ${
-                  loading || otp.some((d) => !d) ? 'bg-brand-800' : 'bg-brand-500'
-                }`}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text className="text-white text-base font-semibold">Verify & Continue →</Text>
-                )}
-              </TouchableOpacity>
+              {/* Save Button */}
+              <Button
+                label="Save & Continue"
+                variant={role === 'customer' ? 'primary' : 'brand'}
+                disabled={pinLoading || newPin.length < 4}
+                loading={pinLoading}
+                size="lg"
+                onPress={handleSavePin}
+                className="w-4/5 mx-auto mt-2"
+              />
+            </View>
 
-              {/* Resend */}
-              <View className="items-center">
-                {resendTimer > 0 ? (
-                  <Text className="text-surface-muted text-sm">
-                    Resend OTP in <Text className="text-brand-400">{resendTimer}s</Text>
-                  </Text>
-                ) : (
-                  <TouchableOpacity onPress={sendOtp}>
-                    <Text className="text-brand-400 text-sm font-semibold">Resend OTP</Text>
-                  </TouchableOpacity>
-                )}
+            <Text className="text-center text-text-muted text-[10px] font-semibold">
+              Your PIN is securely hashed and encrypted.
+            </Text>
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
+  // RENDER STANDARD OTP INTERFACE
+  const isOtpComplete = otp.every(Boolean);
+
+  return (
+    <SafeAreaView className="flex-1 bg-white">
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
+        <View className="flex-1 px-6 pt-12 pb-8 justify-between">
+          <View>
+            {/* Back Button */}
+            <TouchableOpacity
+              onPress={() => router.back()}
+              activeOpacity={0.8}
+              className="w-9 h-9 rounded-full bg-background-secondary justify-center items-center mb-6 active:bg-slate-100 border border-border-primary"
+            >
+              <Ionicons name="arrow-back" size={18} color="rgb(var(--text-secondary))" />
+            </TouchableOpacity>
+
+            {/* Header */}
+            <Text className="text-text-primary text-2xl font-extrabold mb-1 tracking-tight">Verify OTP</Text>
+            <Text className="text-text-secondary text-xs font-semibold mb-8 leading-5">
+              We sent a 6-digit verification code to{' '}
+              <Text className="text-text-primary font-bold">{phone}</Text>
+            </Text>
+
+            {sending ? (
+              <View className="items-center py-12">
+                <ActivityIndicator color="rgb(var(--primary))" size="large" />
+                <Text className="text-text-muted text-[10px] font-bold mt-4 uppercase tracking-wider">Requesting OTP…</Text>
               </View>
-            </>
-          )}
+            ) : (
+              <>
+                {/* OTP Boxes */}
+                <View className="flex-row justify-between mb-8">
+                  {otp.map((digit, idx) => (
+                    <TextInput
+                      key={idx}
+                      ref={(r) => { if (r) inputRefs.current[idx] = r; }}
+                      className={`w-11 h-14 rounded-2xl border text-center text-text-primary text-lg font-extrabold bg-background-secondary ${
+                        digit ? 'border-primary' : 'border-border-secondary'
+                      }`}
+                      keyboardType="numeric"
+                      maxLength={1}
+                      value={digit}
+                      onChangeText={(v) => handleOtpChange(v, idx)}
+                      onKeyPress={(e) => handleKeyPress(e, idx)}
+                      autoFocus={idx === 0}
+                    />
+                  ))}
+                </View>
+
+                {/* Verify Button */}
+                <Button
+                  label="Verify & Continue"
+                  variant={role === 'customer' ? 'primary' : 'brand'}
+                  disabled={loading || !isOtpComplete}
+                  loading={loading}
+                  size="lg"
+                  onPress={() => verifyOtp()}
+                  className="w-full mb-6"
+                />
+
+                {/* Resend Timer */}
+                <View className="items-center mt-2">
+                  {resendTimer > 0 ? (
+                    <Text className="text-text-secondary text-xs font-semibold">
+                      Resend OTP in <Text className="text-primary font-extrabold">{resendTimer}s</Text>
+                    </Text>
+                  ) : (
+                    <TouchableOpacity onPress={sendOtp} activeOpacity={0.8} className="active:opacity-60">
+                      <Text className="text-primary text-xs font-bold uppercase tracking-wider">Resend OTP</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </>
+            )}
+          </View>
+
+          <Text className="text-center text-text-muted text-[10px] font-semibold">
+            Do not share the OTP with anyone.
+          </Text>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

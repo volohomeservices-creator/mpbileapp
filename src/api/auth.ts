@@ -31,3 +31,36 @@ export async function mobileRefresh(refreshToken: string): Promise<MobileRefresh
 export async function getMe(): Promise<AuthUser> {
   return apiGet<AuthUser>('/api/auth/me');
 }
+
+/**
+ * Pre-check auth method for a mobile phone number.
+ */
+export async function preCheck(phone: string): Promise<{
+  authMethod: 'pin_required' | 'otp_required' | 'trusted_device';
+  isRegistered: boolean;
+  hasEmail: boolean;
+}> {
+  return apiPost('/api/auth/pre-check', {
+    phone,
+    recaptchaToken: 'BYPASS_TOKEN_VOLO_DEV_SECRET',
+  });
+}
+
+/**
+ * Log in via PIN.
+ */
+export async function pinLogin(phone: string, pin: string): Promise<LoginResponse> {
+  return apiPost('/api/auth/pin-login', {
+    phone,
+    pin,
+    recaptchaToken: 'BYPASS_TOKEN_VOLO_DEV_SECRET',
+  });
+}
+
+/**
+ * Configure new PIN.
+ */
+export async function setPin(pin: string): Promise<{ success: boolean }> {
+  return apiPost('/api/auth/set-pin', { pin });
+}
+

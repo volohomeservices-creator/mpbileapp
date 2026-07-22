@@ -1,6 +1,8 @@
+const path = require('path');
+
 module.exports = function (api) {
   api.cache(true);
-  return {
+  const config = {
     presets: [
       ['babel-preset-expo', { jsxImportSource: 'nativewind' }],
       'nativewind/babel',
@@ -12,11 +14,11 @@ module.exports = function (api) {
           root: ['./'],
           alias: {
             '@': './src',
-            '@volo/shared-types': '../../packages/shared-types/src/index.ts',
           },
         },
       ],
       'react-native-reanimated/plugin',
     ],
   };
+  return config;
 };

@@ -12,7 +12,7 @@ export function Skeleton({ className = '', style, ...props }: SkeletonProps) {
     const animation = Animated.loop(
       Animated.sequence([
         Animated.timing(opacity, {
-          toValue: 0.7,
+          toValue: 0.6,
           duration: 800,
           useNativeDriver: true,
         }),
@@ -30,7 +30,7 @@ export function Skeleton({ className = '', style, ...props }: SkeletonProps) {
   return (
     <Animated.View
       style={[{ opacity }, style]}
-      className={`bg-slate-800 rounded-lg ${className}`}
+      className={`bg-border-secondary rounded-xl ${className}`}
       {...props}
     />
   );

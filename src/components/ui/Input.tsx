@@ -16,17 +16,17 @@ export function Input({
   return (
     <View className={`w-full mb-4 ${containerStyle}`}>
       {label ? (
-        <Text className="text-slate-400 text-sm font-medium mb-1.5">{label}</Text>
+        <Text className="text-text-secondary text-xs font-bold tracking-wide uppercase mb-1.5">{label}</Text>
       ) : null}
       <TextInput
-        placeholderTextColor="#64748b"
-        className={`w-full h-13 px-4 rounded-xl border bg-slate-900 text-white text-base border-slate-800 focus:border-brand-500 ${
-          error ? 'border-red-500 focus:border-red-500' : ''
+        placeholderTextColor="rgb(var(--text-muted))"
+        className={`w-full h-12 px-4 rounded-xl border bg-background-secondary text-text-primary text-sm border-border-secondary focus:border-primary focus:bg-background-card ${
+          error ? 'border-danger focus:border-danger' : ''
         } ${className}`}
         {...props}
       />
       {error ? (
-        <Text className="text-red-500 text-xs mt-1 font-medium">{error}</Text>
+        <Text className="text-danger text-xs mt-1.5 font-semibold">{error}</Text>
       ) : null}
     </View>
   );

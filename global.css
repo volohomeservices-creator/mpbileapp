@@ -1,3 +1,46 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    --primary: 79 70 229; /* indigo-600 */
+    --primary-light: 99 102 241; /* indigo-500 */
+    --brand-orange: 255 122 0; /* VOLO orange */
+    --brand-blue: 10 88 202; /* VOLO blue */
+    --brand-green: 92 191 42; /* VOLO green */
+    
+    --background: 255 255 255;
+    --background-secondary: 248 250 252; /* slate-50 */
+    --background-card: 255 255 255;
+    
+    --text-primary: 15 23 42; /* slate-900 */
+    --text-secondary: 71 85 105; /* slate-700 */
+    --text-muted: 148 163 184; /* slate-400 */
+    
+    --border-primary: 241 245 249; /* slate-100 */
+    --border-secondary: 226 232 240; /* slate-200 */
+    
+    --success: 16 185 129; /* emerald-500 */
+    --warning: 245 158 11; /* amber-500 */
+    --danger: 239 68 68; /* red-500 */
+    --info: 14 165 233; /* sky-500 */
+  }
+
+  .dark {
+    --primary: 99 102 241; /* indigo-500 */
+    --primary-light: 129 140 248; /* indigo-400 */
+    --brand-orange: 255 138 24;
+    
+    --background: 15 23 42; /* slate-900 */
+    --background-secondary: 30 41 59; /* slate-800 */
+    --background-card: 30 41 59;
+    
+    --text-primary: 248 250 252; /* slate-50 */
+    --text-secondary: 203 213 225; /* slate-300 */
+    --text-muted: 100 116 139; /* slate-500 */
+    
+    --border-primary: 30 41 59;
+    --border-secondary: 51 65 85; /* slate-700 */
+  }
+}

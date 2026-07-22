@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 const extra = Constants.expoConfig?.extra as Record<string, string> | undefined;
 
@@ -7,7 +8,16 @@ const extra = Constants.expoConfig?.extra as Record<string, string> | undefined;
  * Set via API_BASE_URL in the appropriate .env.* file.
  * Never hardcode URLs — they change per environment.
  */
-export const API_BASE_URL: string = extra?.API_BASE_URL ?? 'http://YOUR_LOCAL_IP:3000';
+const defaultApiUrl = Platform.OS === 'web'
+  ? (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8081')
+  : 'http://192.168.0.103:3000';
+
+let resolvedUrl = extra?.API_BASE_URL ?? defaultApiUrl;
+if (Platform.OS === 'web') {
+  resolvedUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8081';
+}
+
+export const API_BASE_URL: string = resolvedUrl;
 
 export const APP_VARIANT: string = extra?.APP_VARIANT ?? 'development';
 

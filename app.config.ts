@@ -1,8 +1,5 @@
 import type { ExpoConfig, ConfigContext } from 'expo/config';
-// @ts-ignore
-import fs from 'fs';
-// @ts-ignore
-import path from 'path';
+
 
 const IS_DEV = process.env.APP_VARIANT === 'development';
 const IS_PREVIEW = process.env.APP_VARIANT === 'preview';
@@ -15,10 +12,7 @@ const getAppName = () => {
 
 const getBundleId = () => 'com.volohome.app';
 
-// @ts-ignore
-const hasGoogleServicesJson = fs.existsSync(path.resolve(__dirname, 'google-services.json'));
-// @ts-ignore
-const hasGoogleServicesPlist = fs.existsSync(path.resolve(__dirname, 'GoogleService-Info.plist'));
+
 
 export default ({ config }: ConfigContext): any => ({
   ...config,
@@ -28,15 +22,13 @@ export default ({ config }: ConfigContext): any => ({
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
-  splash: {
-    image: './assets/splash-icon.png',
-    resizeMode: 'contain',
-    backgroundColor: '#0F172A',
-  },
   ios: {
     bundleIdentifier: getBundleId(),
     supportsTablet: false,
     googleServicesFile: './GoogleService-Info.plist',
+    config: {
+      googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyDJ3DI7eMgk6J-YkflEw7gVDqr07uwxcg',
+    },
     infoPlist: {
       NSLocationWhenInUseUsageDescription:
         'VOLO needs your location to assign nearby workers and show your live position.',
@@ -49,6 +41,11 @@ export default ({ config }: ConfigContext): any => ({
   android: {
     package: getBundleId(),
     googleServicesFile: './google-services.json',
+    config: {
+      googleMaps: {
+        apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyC7lRr_t9cXvXFx2lbNhJwQg2hRxbs9eQ8',
+      },
+    },
     adaptiveIcon: {
       foregroundImage: './assets/android-icon-foreground.png',
       backgroundImage: './assets/android-icon-background.png',
@@ -69,13 +66,16 @@ export default ({ config }: ConfigContext): any => ({
   },
   web: {
     bundler: 'metro',
-    output: 'static',
+    output: 'single',
     favicon: './assets/favicon.png',
   },
   plugins: [
     'expo-router',
+    'expo-font',
     '@react-native-firebase/app',
     '@react-native-firebase/auth',
+    '@react-native-firebase/messaging',
+    'expo-status-bar',
     [
       'expo-location',
       {
@@ -91,6 +91,14 @@ export default ({ config }: ConfigContext): any => ({
       },
     ],
     'expo-secure-store',
+    [
+      'expo-splash-screen',
+      {
+        image: './assets/splash-icon.png',
+        resizeMode: 'contain',
+        backgroundColor: '#0F172A',
+      },
+    ],
   ],
   experiments: {
     typedRoutes: true,

@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut } from '@/api/client';
+import { apiGet, apiPost, apiPatch } from '@/api/client';
 import {
   Booking,
   CreateBookingPayload,
@@ -25,8 +25,16 @@ export const createBooking = (payload: CreateBookingPayload): Promise<CreateBook
 
 /** Cancel a booking. */
 export const cancelBooking = (id: string): Promise<{ success: boolean }> =>
-  apiPut(`/api/customer/bookings/${id}`, { action: 'cancel' });
+  apiPatch(`/api/customer/bookings/${id}`, { status: 'CANCELLED' });
 
 /** Fetch all active service categories + items. */
 export const getServices = (): Promise<{ categories: ServiceCategoryWithItems[] }> =>
   apiGet('/api/customer/services');
+
+/** Submit a review for a completed booking. */
+export const submitReview = (payload: { booking_id: string; rating: number; comment?: string }): Promise<{ success: boolean }> =>
+  apiPost('/api/customer/reviews', payload);
+
+/** Fetch active mobile banners. */
+export const getActiveBanners = (): Promise<{ banners: any[] }> =>
+  apiGet('/api/customer/banners');

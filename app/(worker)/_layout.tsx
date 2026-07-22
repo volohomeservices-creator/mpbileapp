@@ -1,38 +1,41 @@
 import { Tabs } from 'expo-router';
-import { View, Text, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useLanguage } from '@/hooks/useLanguage';
 
 export default function WorkerLayout() {
+  const { t } = useLanguage();
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: true,
-        tabBarActiveTintColor: '#FF7A00', // brand orange
+        tabBarActiveTintColor: '#ff7a00', // brand worker orange
         tabBarInactiveTintColor: '#94a3b8', // slate-400
         tabBarStyle: {
-          backgroundColor: '#0f172a', // slate-900
+          backgroundColor: '#ffffff',
           borderTopWidth: 1,
-          borderTopColor: '#1e293b', // slate-800
-          paddingBottom: Platform.OS === 'ios' ? 24 : 8,
+          borderTopColor: '#f1f5f9',
+          paddingBottom: Platform.OS === 'ios' ? 24 : (Platform.OS === 'web' ? 12 : 8),
           paddingTop: 8,
-          height: Platform.OS === 'ios' ? 88 : 64,
-          elevation: 8,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -4 },
-          shadowOpacity: 0.1,
-          shadowRadius: 12,
+          height: Platform.OS === 'ios' ? 88 : (Platform.OS === 'web' ? 72 : 64),
+          elevation: 4,
+          shadowColor: '#64748b',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.05,
+          shadowRadius: 8,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
+          fontSize: 10,
+          fontWeight: '700',
         },
       }}
     >
       <Tabs.Screen
         name="home"
         options={{
-          title: 'Dashboard',
+          title: t('tabs.dashboard'),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'speedometer' : 'speedometer-outline'} size={24} color={color} />
           ),
@@ -41,7 +44,7 @@ export default function WorkerLayout() {
       <Tabs.Screen
         name="jobs"
         options={{
-          title: 'Jobs',
+          title: t('tabs.jobs'),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'briefcase' : 'briefcase-outline'} size={24} color={color} />
           ),
@@ -50,25 +53,31 @@ export default function WorkerLayout() {
       <Tabs.Screen
         name="settlements/index"
         options={{
-          title: 'Payouts',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'card' : 'card-outline'} size={24} color={color} />
-          ),
+          href: null,
         }}
       />
       <Tabs.Screen
         name="wallet/index"
         options={{
-          title: 'Earnings',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'wallet' : 'wallet-outline'} size={24} color={color} />
-          ),
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="notifications/index"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="profile/availability"
+        options={{
+          href: null,
         }}
       />
       <Tabs.Screen
         name="profile/index"
         options={{
-          title: 'Profile',
+          title: t('tabs.account'),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
           ),

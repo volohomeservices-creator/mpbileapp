@@ -2,7 +2,7 @@ import { View, ViewProps } from 'react-native';
 
 interface CardProps extends ViewProps {
   className?: string;
-  variant?: 'default' | 'muted' | 'brand';
+  variant?: 'default' | 'muted' | 'brand' | 'brand-orange';
 }
 
 export function Card({
@@ -11,16 +11,19 @@ export function Card({
   variant = 'default',
   ...props
 }: CardProps) {
-  let bgStyle = 'bg-slate-900 border-slate-800/80';
+  let bgStyle = 'bg-background-card border-border-primary shadow-premium';
+  
   if (variant === 'muted') {
-    bgStyle = 'bg-slate-950/60 border-slate-900';
+    bgStyle = 'bg-background-secondary border-transparent';
   } else if (variant === 'brand') {
-    bgStyle = 'bg-brand-950/20 border-brand-900/40';
+    bgStyle = 'bg-primary/5 border-primary/10';
+  } else if (variant === 'brand-orange') {
+    bgStyle = 'bg-brand-orange/5 border-brand-orange/10';
   }
 
   return (
     <View
-      className={`rounded-2xl border p-5 ${bgStyle} ${className}`}
+      className={`rounded-3xl border p-5 ${bgStyle} ${className}`}
       {...props}
     >
       {children}

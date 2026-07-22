@@ -1,8 +1,9 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Booking, BookingStatus } from '@volo/shared-types';
-import { Card } from './ui/Card';
 import { Badge } from './ui/Badge';
+import { Card } from './ui/Card';
+import { Button } from './ui/Button';
 
 interface JobCardProps {
   job: Booking;
@@ -41,86 +42,90 @@ export function JobCard({
     return status.replace(/_/g, ' ').toLowerCase();
   };
 
-  const serviceName = job.service_items?.name ?? 'Cleaning Job';
-  const pay = job.total_amount;
-  const address = job.address_line;
+  const serviceName = (job as any).service_name || job.service_items?.name || 'Cleaning Job';
+  const pay = (job as any).estimated_earnings !== undefined ? (job as any).estimated_earnings : job.total_amount;
+  const address = (job as any).locality || job.address_line;
 
-  const formattedDate = new Date(job.created_at).toLocaleDateString('en-IN', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const rawDate = job.scheduled_at || job.created_at;
+  const formattedDate = rawDate
+    ? new Date(rawDate).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : 'No Date Set';
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.8} className="mb-4">
-      <Card className="border-slate-800 bg-slate-900/60 active:border-slate-700">
+    <TouchableOpacity onPress={onPress} activeOpacity={0.9} className="mb-4">
+      <Card variant="default" className="border-border-primary shadow-premium active:border-border-secondary p-5">
         <View className="flex-row justify-between items-start mb-3">
           <View className="flex-1 mr-2">
-            <Text className="text-white text-base font-bold mb-1" numberOfLines={1}>
+            <Text className="text-text-primary text-base font-extrabold mb-1" numberOfLines={1}>
               {serviceName}
             </Text>
-            <Text className="text-slate-400 text-xs flex-row items-center">
-              <Ionicons name="time-outline" size={12} color="#64748b" /> {formattedDate}
-            </Text>
+            <View className="flex-row items-center mt-1">
+              <Ionicons name="time-outline" size={13} color="rgb(var(--text-muted))" />
+              <Text className="text-text-secondary text-xs ml-1 font-semibold">
+                {formattedDate}
+              </Text>
+            </View>
           </View>
-          <Badge
-            label={getStatusLabel(job.status)}
-            variant={getStatusVariant(job.status)}
-            size="sm"
-          />
+          <Badge label={getStatusLabel(job.status)} variant={getStatusVariant(job.status)} />
         </View>
 
         <View className="flex-row items-center mb-3">
-          <Ionicons name="location-outline" size={14} color="#94a3b8" />
-          <Text className="text-slate-350 text-xs ml-1 flex-1" numberOfLines={1}>
+          <Ionicons name="location-outline" size={14} color="rgb(var(--text-muted))" />
+          <Text className="text-text-secondary text-xs ml-1 flex-1 font-medium" numberOfLines={1}>
             {address}
           </Text>
         </View>
 
         {job.notes ? (
-          <View className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-850 mb-3">
-            <Text className="text-slate-400 text-xs italic" numberOfLines={2}>
+          <View className="bg-background-secondary p-3 rounded-2xl border border-border-primary mb-3">
+            <Text className="text-text-secondary text-xs italic font-medium" numberOfLines={2}>
               "{job.notes}"
             </Text>
           </View>
         ) : null}
 
-        <View className="h-[1px] bg-slate-800/80 my-2" />
+        <View className="h-[1px] bg-border-primary my-2" />
 
         <View className="flex-row justify-between items-center mt-1">
           <View className="flex-row items-center">
-            <Ionicons name="cash-outline" size={16} color="#0a58ca" />
-            <Text className="text-slate-455 text-xs ml-1.5 font-medium">Earnings</Text>
+            <Ionicons name="cash-outline" size={16} color="rgb(var(--primary))" />
+            <Text className="text-text-secondary text-xs ml-1.5 font-bold">Earnings</Text>
           </View>
-          <Text className="text-white text-base font-extrabold">
+          <Text className="text-text-primary text-base font-extrabold">
             ₹{pay}
           </Text>
         </View>
 
-        {showActions && job.status === BookingStatus.WORKER_ASSIGNED && (
+        {showActions && (job.status === BookingStatus.WORKER_ASSIGNED || job.status === BookingStatus.PENDING_ASSIGNMENT) && (
           <View className="flex-row mt-4 space-x-3">
             {onReject && (
-              <TouchableOpacity
+              <Button
+                label="Decline"
+                variant="outline"
+                size="sm"
                 onPress={(e) => {
                   e.stopPropagation();
                   onReject();
                 }}
-                className="flex-1 h-11 border border-slate-800 rounded-xl items-center justify-center active:bg-slate-900"
-              >
-                <Text className="text-slate-400 font-semibold text-sm">Decline</Text>
-              </TouchableOpacity>
+                className="flex-1"
+              />
             )}
             {onAccept && (
-              <TouchableOpacity
+              <Button
+                label="Accept Job"
+                variant="primary"
+                size="sm"
                 onPress={(e) => {
                   e.stopPropagation();
                   onAccept();
                 }}
-                className="flex-1 h-11 bg-worker-500 rounded-xl items-center justify-center active:bg-worker-600"
-              >
-                <Text className="text-white font-semibold text-sm">Accept Job</Text>
-              </TouchableOpacity>
+                className="flex-1"
+              />
             )}
           </View>
         )}

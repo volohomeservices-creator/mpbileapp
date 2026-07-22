@@ -1,5 +1,5 @@
 import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
-import * as SecureStore from 'expo-secure-store';
+import { storage } from '@/utils/storage';
 import { API_BASE_URL } from '@/config';
 
 export const SECURE_KEYS = {
@@ -23,7 +23,7 @@ export const apiClient = axios.create({
 
 apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
-    const token = await SecureStore.getItemAsync(SECURE_KEYS.TOKEN);
+    const token = await storage.getItem(SECURE_KEYS.TOKEN);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -47,7 +47,14 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    const isAuthEndpoint = originalRequest.url && (
+      originalRequest.url.includes('/api/auth/pin-login') ||
+      originalRequest.url.includes('/api/auth/verify-firebase-token') ||
+      originalRequest.url.includes('/api/auth/pre-check') ||
+      originalRequest.url.includes('/api/auth/mobile-refresh')
+    );
+
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       if (isRefreshing) {
         // Queue this request until refresh completes
         return new Promise((resolve) => {
@@ -62,14 +69,14 @@ apiClient.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const refreshToken = await SecureStore.getItemAsync(SECURE_KEYS.REFRESH_TOKEN);
+        const refreshToken = await storage.getItem(SECURE_KEYS.REFRESH_TOKEN);
         if (!refreshToken) throw new Error('No refresh token');
 
         const res = await axios.post(`${API_BASE_URL}/api/auth/mobile-refresh`, { refreshToken });
         const { token: newToken, refreshToken: newRefreshToken } = res.data;
 
-        await SecureStore.setItemAsync(SECURE_KEYS.TOKEN, newToken);
-        await SecureStore.setItemAsync(SECURE_KEYS.REFRESH_TOKEN, newRefreshToken);
+        await storage.setItem(SECURE_KEYS.TOKEN, newToken);
+        await storage.setItem(SECURE_KEYS.REFRESH_TOKEN, newRefreshToken);
 
         apiClient.defaults.headers.common.Authorization = `Bearer ${newToken}`;
         processQueue(newToken);
@@ -78,9 +85,9 @@ apiClient.interceptors.response.use(
         return apiClient(originalRequest);
       } catch (refreshError) {
         // Refresh failed — clear auth and signal logout
-        await SecureStore.deleteItemAsync(SECURE_KEYS.TOKEN);
-        await SecureStore.deleteItemAsync(SECURE_KEYS.REFRESH_TOKEN);
-        await SecureStore.deleteItemAsync(SECURE_KEYS.USER);
+        await storage.deleteItem(SECURE_KEYS.TOKEN);
+        await storage.deleteItem(SECURE_KEYS.REFRESH_TOKEN);
+        await storage.deleteItem(SECURE_KEYS.USER);
         // Emit logout event consumed by auth store
         authEventEmitter.emit('logout');
         return Promise.reject(refreshError);
@@ -131,6 +138,11 @@ export async function apiPost<T>(url: string, data?: unknown, config?: AxiosRequ
 
 export async function apiPut<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
   const res = await apiClient.put<T>(url, data, config);
+  return res.data;
+}
+
+export async function apiPatch<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+  const res = await apiClient.patch<T>(url, data, config);
   return res.data;
 }
 

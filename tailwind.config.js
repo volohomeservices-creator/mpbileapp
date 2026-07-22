@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: 'class',
   content: [
     './app/**/*.{js,jsx,ts,tsx}',
     './src/**/*.{js,jsx,ts,tsx}',
@@ -8,49 +9,41 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // VOLO Brand Palette
+        primary: 'rgb(var(--primary) / <alpha-value>)',
+        'primary-light': 'rgb(var(--primary-light) / <alpha-value>)',
         brand: {
-          50:  '#fff7ed',
-          100: '#ffedd5',
-          200: '#fed7aa',
-          300: '#fdbb74',
-          400: '#fb923c',
-          500: '#ff7a00',   // primary brand orange
-          600: '#ea580c',
-          700: '#c2410c',
-          800: '#9a3412',
-          900: '#7c2d12',
-          blue: '#0a58ca',   // secondary brand blue
-          green: '#5cbf2a',  // secondary brand green
+          orange: 'rgb(var(--brand-orange) / <alpha-value>)',
+          blue: 'rgb(var(--brand-blue) / <alpha-value>)',
+          green: 'rgb(var(--brand-green) / <alpha-value>)',
         },
-        worker: {
-          50:  '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#0a58ca',   // primary brand blue
-          600: '#0950b8',
-          700: '#073f91',
-          800: '#052c66',
-          900: '#031b3d',
+        background: 'rgb(var(--background) / <alpha-value>)',
+        'background-secondary': 'rgb(var(--background-secondary) / <alpha-value>)',
+        'background-card': 'rgb(var(--background-card) / <alpha-value>)',
+        text: {
+          primary: 'rgb(var(--text-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--text-secondary) / <alpha-value>)',
+          muted: 'rgb(var(--text-muted) / <alpha-value>)',
         },
-        surface: {
-          DEFAULT: '#0F172A',  // dark bg
-          card:    '#1E293B',
-          border:  '#334155',
-          muted:   '#475569',
+        border: {
+          primary: 'rgb(var(--border-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--border-secondary) / <alpha-value>)',
         },
-        accent: {
-          green:  '#5cbf2a',   // official logo green
-          red:    '#EF4444',
-          amber:  '#F59E0B',
-          blue:   '#0a58ca',   // official logo blue
-        },
+        success: 'rgb(var(--success) / <alpha-value>)',
+        warning: 'rgb(var(--warning) / <alpha-value>)',
+        danger: 'rgb(var(--danger) / <alpha-value>)',
+        info: 'rgb(var(--info) / <alpha-value>)',
       },
       fontFamily: {
         sans: ['System'],
       },
+      borderRadius: {
+        '3xl': '24px',
+        '4xl': '32px',
+      },
+      boxShadow: {
+        premium: '0 4px 20px -2px rgba(100, 116, 139, 0.08), 0 2px 8px -1px rgba(100, 116, 139, 0.04)',
+        'premium-indigo': '0 8px 30px -4px rgba(99, 102, 241, 0.15)',
+      }
     },
   },
   plugins: [],

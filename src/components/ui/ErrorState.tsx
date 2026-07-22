@@ -16,16 +16,16 @@ export function ErrorState({
   retryLabel = 'Try Again',
 }: ErrorStateProps) {
   return (
-    <View className="flex-1 items-center justify-center p-6 bg-slate-950">
-      <View className="w-16 h-16 bg-red-500/10 rounded-2xl items-center justify-center mb-6 border border-red-500/20">
-        <Ionicons name="alert-circle" size={36} color="#ef4444" />
+    <View className="flex-1 items-center justify-center p-8 bg-transparent">
+      <View className="w-16 h-16 bg-danger/10 rounded-3xl items-center justify-center mb-6 border border-danger/20">
+        <Ionicons name="alert-circle" size={32} color="rgb(var(--danger))" />
       </View>
-      <Text className="text-white text-xl font-bold text-center mb-2">{title}</Text>
-      <Text className="text-slate-400 text-sm text-center mb-8 leading-5 max-w-[280px]">
+      <Text className="text-text-primary text-base font-extrabold text-center mb-2">{title}</Text>
+      <Text className="text-text-secondary text-xs text-center mb-6 leading-5 max-w-[280px]">
         {message}
       </Text>
       {onRetry ? (
-        <Button label={retryLabel} variant="secondary" onPress={onRetry} className="min-w-[140px]" />
+        <Button label={retryLabel} variant="secondary" onPress={onRetry} className="min-w-[160px]" />
       ) : null}
     </View>
   );

@@ -8,7 +8,7 @@ import { router } from 'expo-router';
 export function registerNotificationHandlers() {
   // 1. Foreground listener
   const unsubscribeForeground = messaging().onMessage(async (remoteMessage) => {
-    console.log('[FCM] Foreground notification received:', remoteMessage);
+    if (__DEV__) console.log('[FCM] Foreground notification received:', remoteMessage);
 
     const title = remoteMessage.notification?.title || 'Notification';
     const body = remoteMessage.notification?.body || '';
@@ -33,7 +33,7 @@ export function registerNotificationHandlers() {
 
   // 2. Background click listener
   const unsubscribeBackgroundClick = messaging().onNotificationOpenedApp((remoteMessage) => {
-    console.log('[FCM] App opened from background state:', remoteMessage);
+    if (__DEV__) console.log('[FCM] App opened from background state:', remoteMessage);
     handleNotificationAction(remoteMessage.data);
   });
 
@@ -42,7 +42,7 @@ export function registerNotificationHandlers() {
     .getInitialNotification()
     .then((remoteMessage) => {
       if (remoteMessage) {
-        console.log('[FCM] App opened from quit state:', remoteMessage);
+        if (__DEV__) console.log('[FCM] App opened from quit state:', remoteMessage);
         handleNotificationAction(remoteMessage.data);
       }
     });

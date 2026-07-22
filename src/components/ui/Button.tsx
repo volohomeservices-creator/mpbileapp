@@ -2,7 +2,7 @@ import { TouchableOpacity, Text, ActivityIndicator, TouchableOpacityProps } from
 
 interface ButtonProps extends TouchableOpacityProps {
   label: string;
-  variant?: 'primary' | 'secondary' | 'outline' | 'danger' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'outline' | 'danger' | 'ghost' | 'brand';
   loading?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }
@@ -16,46 +16,54 @@ export function Button({
   disabled,
   ...props
 }: ButtonProps) {
-  const baseStyle = 'rounded-xl items-center justify-center flex-row';
+  const baseStyle = 'rounded-xl items-center justify-center flex-row active:scale-98 transition-transform duration-100';
   
-  let variantStyle = 'bg-brand-500';
-  let textStyle = 'text-white font-semibold';
+  let variantStyle = 'bg-primary';
+  let textStyle = 'text-white font-semibold tracking-wide';
   
   if (variant === 'primary') {
-    variantStyle = disabled || loading ? 'bg-brand-800 opacity-60' : 'bg-brand-500 active:bg-brand-600';
-    textStyle = 'text-white font-semibold';
+    variantStyle = disabled || loading ? 'bg-primary/50' : 'bg-primary active:bg-primary-light';
+    textStyle = 'text-white font-bold';
   } else if (variant === 'secondary') {
-    variantStyle = disabled || loading ? 'bg-slate-800 opacity-60' : 'bg-slate-800 active:bg-slate-700';
-    textStyle = 'text-slate-200 font-semibold';
+    variantStyle = disabled || loading ? 'bg-background-secondary opacity-60' : 'bg-background-secondary border border-border-secondary active:bg-slate-100';
+    textStyle = 'text-text-secondary font-semibold';
   } else if (variant === 'outline') {
-    variantStyle = disabled || loading ? 'border border-slate-800 opacity-60' : 'border border-slate-700 active:bg-slate-900';
-    textStyle = 'text-slate-300 font-semibold';
+    variantStyle = disabled || loading ? 'border border-border-secondary opacity-60' : 'border border-border-secondary bg-transparent active:bg-background-secondary';
+    textStyle = 'text-text-secondary font-semibold';
   } else if (variant === 'danger') {
-    variantStyle = disabled || loading ? 'bg-red-950 opacity-60' : 'bg-red-600 active:bg-red-700';
-    textStyle = 'text-white font-semibold';
+    variantStyle = disabled || loading ? 'bg-danger/50' : 'bg-danger active:bg-danger/90';
+    textStyle = 'text-white font-bold';
   } else if (variant === 'ghost') {
-    variantStyle = disabled || loading ? 'opacity-40' : 'active:bg-slate-900';
-    textStyle = 'text-brand-400 font-semibold';
+    variantStyle = disabled || loading ? 'opacity-40' : 'active:bg-background-secondary';
+    textStyle = 'text-primary font-bold';
+  } else if (variant === 'brand') {
+    variantStyle = disabled || loading ? 'bg-brand-orange/50' : 'bg-brand-orange active:bg-brand-orange/95';
+    textStyle = 'text-white font-bold';
   }
 
-  let sizeStyle = 'py-3.5 px-6';
-  let textSize = 'text-base';
+  let sizeStyle = 'py-3.5 px-6 h-12';
+  let textSize = 'text-sm';
   if (size === 'sm') {
-    sizeStyle = 'py-2.5 px-4';
-    textSize = 'text-sm';
+    sizeStyle = 'py-2 px-4 h-9';
+    textSize = 'text-xs';
   } else if (size === 'lg') {
-    sizeStyle = 'py-4.5 px-8';
-    textSize = 'text-lg';
+    sizeStyle = 'py-4.5 px-8 h-14';
+    textSize = 'text-base';
   }
 
   return (
     <TouchableOpacity
       disabled={disabled || loading}
+      activeOpacity={0.85}
       className={`${baseStyle} ${variantStyle} ${sizeStyle} ${className}`}
       {...props}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'outline' || variant === 'ghost' ? '#FF7A00' : '#fff'} size="small" className="mr-2" />
+        <ActivityIndicator 
+          color={variant === 'outline' || variant === 'ghost' ? 'rgb(var(--primary))' : '#ffffff'} 
+          size="small" 
+          className="mr-2" 
+        />
       ) : null}
       <Text className={`${textStyle} ${textSize}`}>{label}</Text>
     </TouchableOpacity>

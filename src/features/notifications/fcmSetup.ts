@@ -14,7 +14,7 @@ export async function setupFcmNotifications(): Promise<string | null> {
       authStatus === messaging.AuthorizationStatus.PROVISIONAL;
 
     if (!enabled) {
-      console.log('[FCM] Push notifications permission denied.');
+      if (__DEV__) console.log('[FCM] Push notifications permission denied.');
       return null;
     }
 
@@ -26,7 +26,7 @@ export async function setupFcmNotifications(): Promise<string | null> {
     // 3. Get FCM Token
     const fcmToken = await messaging().getToken();
     if (fcmToken) {
-      console.log('[FCM] Device Token:', fcmToken);
+      if (__DEV__) console.log('[FCM] Device Token:', fcmToken);
       // Register with the backend database
       await registerDeviceToken(fcmToken, Platform.OS === 'android' ? 'android' : 'ios');
       return fcmToken;
@@ -45,7 +45,7 @@ export async function setupFcmNotifications(): Promise<string | null> {
 export function listenForFcmTokenRefresh() {
   return messaging().onTokenRefresh(async (newToken) => {
     try {
-      console.log('[FCM] Token refreshed:', newToken);
+      if (__DEV__) console.log('[FCM] Token refreshed:', newToken);
       await registerDeviceToken(newToken, Platform.OS === 'android' ? 'android' : 'ios');
     } catch (err) {
       console.warn('[FCM] Failed to update refreshed token on server:', err);

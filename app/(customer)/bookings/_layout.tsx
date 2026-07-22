@@ -5,7 +5,7 @@ export default function BookingsLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#0f172a' },
+        contentStyle: { backgroundColor: '#f8fafc' },
         animation: 'slide_from_right',
       }}
     >

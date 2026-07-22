@@ -2,7 +2,7 @@ import { View, Text } from 'react-native';
 
 interface BadgeProps {
   label: string;
-  variant?: 'default' | 'success' | 'warning' | 'error' | 'info' | 'brand';
+  variant?: 'default' | 'success' | 'warning' | 'error' | 'info' | 'brand' | 'brand-orange';
   size?: 'sm' | 'md';
 }
 
@@ -11,28 +11,31 @@ export function Badge({
   variant = 'default',
   size = 'md',
 }: BadgeProps) {
-  let containerStyle = 'bg-slate-800 border-slate-700';
-  let textStyle = 'text-slate-300';
+  let containerStyle = 'bg-background-secondary border-border-secondary';
+  let textStyle = 'text-text-secondary';
 
   if (variant === 'success') {
-    containerStyle = 'bg-emerald-500/10 border-emerald-500/20';
-    textStyle = 'text-emerald-400';
+    containerStyle = 'bg-success/10 border-success/20';
+    textStyle = 'text-success';
   } else if (variant === 'warning') {
-    containerStyle = 'bg-amber-500/10 border-amber-500/20';
-    textStyle = 'text-amber-400';
+    containerStyle = 'bg-warning/10 border-warning/20';
+    textStyle = 'text-warning';
   } else if (variant === 'error') {
-    containerStyle = 'bg-rose-500/10 border-rose-500/20';
-    textStyle = 'text-rose-400';
+    containerStyle = 'bg-danger/10 border-danger/20';
+    textStyle = 'text-danger';
   } else if (variant === 'info') {
-    containerStyle = 'bg-sky-500/10 border-sky-500/20';
-    textStyle = 'text-sky-400';
+    containerStyle = 'bg-info/10 border-info/20';
+    textStyle = 'text-info';
   } else if (variant === 'brand') {
-    containerStyle = 'bg-brand-500/10 border-brand-500/20';
-    textStyle = 'text-brand-400';
+    containerStyle = 'bg-primary/10 border-primary/20';
+    textStyle = 'text-primary';
+  } else if (variant === 'brand-orange') {
+    containerStyle = 'bg-brand-orange/10 border-brand-orange/20';
+    textStyle = 'text-brand-orange';
   }
 
-  const paddingStyle = size === 'sm' ? 'px-2 py-0.5 rounded-md' : 'px-3 py-1 rounded-full';
-  const fontSizeStyle = size === 'sm' ? 'text-[10px] font-bold tracking-wide uppercase' : 'text-xs font-semibold';
+  const paddingStyle = size === 'sm' ? 'px-2 py-0.5 rounded-md' : 'px-3 py-1.5 rounded-full';
+  const fontSizeStyle = size === 'sm' ? 'text-[9px] font-bold tracking-wide uppercase' : 'text-xs font-bold';
 
   return (
     <View className={`border inline-flex items-center justify-center self-start ${paddingStyle} ${containerStyle}`}>
