@@ -6,20 +6,34 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/logo.webp",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAF8FF"
+    },
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "package": "com.volohome.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "googleServicesFile": "./google-services.json",
+      "versionCode": 29870300
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "5725c0be-01ed-44b5-b6e7-7f13143cb136"
+      }
     }
   }
 }

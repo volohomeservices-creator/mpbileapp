@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 10.0.0"
+    "version": ">= 10.0.0",
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
@@ -17,8 +18,15 @@
       }
     },
     "production": {
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
       "env": {
-        "APP_VARIANT": "production"
+        "APP_VARIANT": "production",
+        "API_BASE_URL": "https://api.voloapp.in",
+        "EXPO_PUBLIC_API_URL": "https://api.voloapp.in",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://ruavhqfttentcjtmnlct.supabase.co"
       }
     }
   },

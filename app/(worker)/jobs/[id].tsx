@@ -40,6 +40,7 @@ export default function WorkerJobDetailScreen() {
   const [otpError, setOtpError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [showFullMap, setShowFullMap] = useState(true);
 
   // Job Query
   const { data, isLoading, refetch, isError } = useQuery({
@@ -65,6 +66,29 @@ export default function WorkerJobDetailScreen() {
   // Track worker GPS position on active job
   const watchSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
 
+  // Immediate GPS lock on mount
+  useEffect(() => {
+    let isCancelled = false;
+    Location.requestForegroundPermissionsAsync().then(({ status }) => {
+      if (status === 'granted' && !isCancelled) {
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+          .then((loc) => {
+            if (!isCancelled && loc?.coords) {
+              setCurrentCoords({
+                lat: loc.coords.latitude,
+                lng: loc.coords.longitude,
+              });
+            }
+          })
+          .catch(() => {});
+      }
+    });
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  // Continuous GPS watcher when actively on shift
   useEffect(() => {
     let isCancelled = false;
 
@@ -72,7 +96,6 @@ export default function WorkerJobDetailScreen() {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted' || isCancelled) return;
 
-      // Clear any stale watchers first
       if (watchSubscriptionRef.current) {
         watchSubscriptionRef.current.remove();
         watchSubscriptionRef.current = null;
@@ -90,7 +113,6 @@ export default function WorkerJobDetailScreen() {
             lng: loc.coords.longitude,
           });
 
-          // Send update to server if job is active
           if (
             job &&
             [BookingStatus.ON_THE_WAY, BookingStatus.IN_PROGRESS].includes(job.status)
@@ -186,7 +208,7 @@ export default function WorkerJobDetailScreen() {
 
   const handleStartJob = async () => {
     if (otp.length !== 4) {
-      setOtpError(t('auth.incorrectPin'));
+      setOtpError(t('auth.incorrectPin') || 'Please enter the complete 4-digit PIN');
       return;
     }
     setOtpError('');
@@ -194,10 +216,11 @@ export default function WorkerJobDetailScreen() {
     try {
       const res = await startJob(id, otp);
       if (res.success) {
-        showAlert(t('bookings.in_progress'), t('workerHome.jobAcceptedMsg'));
+        showAlert('Service Started! ⚡', 'Work has begun. Mark complete when you finish the task.');
         queryClient.invalidateQueries({ queryKey: ['worker-job-detail', id] });
+        refetch();
       } else {
-        setOtpError(t('jobs.invalidCode'));
+        setOtpError(t('jobs.invalidCode') || 'Incorrect OTP code entered');
       }
     } catch (err: any) {
       setOtpError(err?.response?.data?.error ?? t('bookings.submitReviewFailed'));
@@ -211,7 +234,7 @@ export default function WorkerJobDetailScreen() {
     try {
       const res = await completeJob(id);
       if (res.success) {
-        showAlert(t('bookings.completed'), t('jobs.congratsMsg'), () => {
+        showAlert('Shift Completed! 🎉', t('jobs.congratsMsg'), () => {
           queryClient.invalidateQueries({ queryKey: ['worker-dashboard'] });
           router.replace('/(worker)/home');
         });
@@ -225,7 +248,18 @@ export default function WorkerJobDetailScreen() {
 
   const handleCallCustomer = (phone: string) => {
     Linking.openURL(`tel:${phone}`).catch(() => {
-      showAlert('Call Failed', 'Unable to initiate call.');
+      showAlert('Call Failed', 'Unable to initiate call on this device.');
+    });
+  };
+
+  const handleOpenNavigation = (lat: number, lng: number) => {
+    const url = Platform.select({
+      ios: `maps://?daddr=${lat},${lng}`,
+      android: `google.navigation:q=${lat},${lng}`,
+      default: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`
+    });
+    Linking.openURL(url).catch(() => {
+      showAlert('Navigation Error', 'Could not open native navigation app.');
     });
   };
 
@@ -237,6 +271,8 @@ export default function WorkerJobDetailScreen() {
         return 'error';
       case BookingStatus.WORKER_ASSIGNED:
         return 'warning';
+      case BookingStatus.ARRIVED:
+        return 'brand-orange';
       default:
         return 'brand';
     }
@@ -245,53 +281,79 @@ export default function WorkerJobDetailScreen() {
   const getStatusLabel = (status: BookingStatus) => {
     switch (status) {
       case BookingStatus.PENDING_ASSIGNMENT:
-        return t('bookings.pending_assignment');
+        return t('bookings.pending_assignment') || 'Pending Assignment';
       case BookingStatus.MANUAL_ASSIGNMENT_REQUIRED:
-        return t('bookings.manual_assignment_required');
+        return t('bookings.manual_assignment_required') || 'Manual Assignment';
       case BookingStatus.WORKER_ASSIGNED:
-        return t('bookings.worker_assigned');
+        return t('bookings.worker_assigned') || 'Assigned to You';
       case BookingStatus.WORKER_ACCEPTED:
-        return t('bookings.worker_accepted');
+        return t('bookings.worker_accepted') || 'Shift Accepted';
       case BookingStatus.ON_THE_WAY:
-        return t('bookings.on_the_way');
+        return t('bookings.on_the_way') || 'En Route';
       case BookingStatus.ARRIVED:
-        return t('bookings.arrived');
+        return t('bookings.arrived') || 'Arrived at Site';
       case BookingStatus.IN_PROGRESS:
-        return t('bookings.in_progress');
+        return t('bookings.in_progress') || 'In Progress';
       case BookingStatus.COMPLETED:
-        return t('bookings.completed');
+        return t('bookings.completed') || 'Completed';
       case BookingStatus.CANCELLED:
-        return t('bookings.cancelled');
+        return t('bookings.cancelled') || 'Cancelled';
       default:
         return status.replace(/_/g, ' ').toLowerCase();
     }
   };
 
+  // Helper for Stepper stages
+  const getStepIndex = (status: BookingStatus) => {
+    switch (status) {
+      case BookingStatus.WORKER_ASSIGNED:
+      case BookingStatus.PENDING_ASSIGNMENT:
+        return 0;
+      case BookingStatus.WORKER_ACCEPTED:
+        return 1;
+      case BookingStatus.ON_THE_WAY:
+        return 2;
+      case BookingStatus.ARRIVED:
+        return 3;
+      case BookingStatus.IN_PROGRESS:
+        return 4;
+      case BookingStatus.COMPLETED:
+        return 5;
+      default:
+        return 0;
+    }
+  };
+
   if (isLoading) {
     return (
-      <View className="flex-1 justify-center items-center bg-white">
-        <ActivityIndicator size="large" color="rgb(var(--brand-orange))" />
-        <Text className="text-text-secondary text-xs mt-2 font-medium">{t('common.loading')}</Text>
+      <View className="flex-1 justify-center items-center bg-slate-50">
+        <ActivityIndicator size="large" color="#3C01A7" />
+        <Text className="text-slate-500 text-xs mt-3 font-semibold">{t('common.loading')}</Text>
       </View>
     );
   }
 
   if (isError || !job) {
     return (
-      <View className="flex-1 justify-center items-center bg-white px-6">
-        <Ionicons name="alert-circle-outline" size={48} color="rgb(var(--danger))" />
-        <Text className="text-text-primary text-lg font-bold mt-4">{t('bookings.bookingNotFound')}</Text>
-        <Button label={t('workerHome.goToJob')} onPress={() => router.back()} className="mt-4" />
+      <View className="flex-1 justify-center items-center bg-slate-50 px-6">
+        <Ionicons name="alert-circle-outline" size={54} color="#EF4444" />
+        <Text className="text-slate-900 text-lg font-bold mt-4">{t('bookings.bookingNotFound')}</Text>
+        <Button label={t('workerHome.goToJob') || 'Go Back'} onPress={() => router.back()} className="mt-5" />
       </View>
     );
   }
 
-  // Determine current active workflow button
+  const customerName = job?.customer?.full_name || 'Customer';
+  const customerPhone = job?.customer?.phone || '+919999999999';
+  const currentStep = getStepIndex(job.status);
+  const earningsAmount = job.estimated_earnings ?? (job.total_amount ? (job.total_amount * 0.85).toFixed(2) : '0.00');
+
+  // Render Interactive Workflow Action Component
   const renderWorkflowButton = () => {
     if (actionLoading) {
       return (
-        <View className="h-14 justify-center items-center bg-white rounded-xl border border-border-primary mb-8 shadow-sm">
-          <ActivityIndicator color="rgb(var(--brand-orange))" />
+        <View className="h-14 justify-center items-center bg-white rounded-2xl border border-slate-200 mb-8 shadow-sm">
+          <ActivityIndicator color="#3C01A7" />
         </View>
       );
     }
@@ -301,88 +363,67 @@ export default function WorkerJobDetailScreen() {
       case BookingStatus.PENDING_ASSIGNMENT:
         return (
           <View className="flex-row gap-3 mb-8">
-            <Button
-              label={t('jobs.decline')}
-              variant="outline"
-              size="lg"
+            <TouchableOpacity
               onPress={() => rejectMutation.mutate()}
-              className="flex-1"
-            />
-            <Button
-              label={t('jobs.acceptShift')}
-              variant="brand"
-              size="lg"
+              activeOpacity={0.8}
+              className="flex-1 h-13 rounded-2xl border border-red-200 bg-red-50/60 justify-center items-center"
+            >
+              <Text className="text-red-600 font-bold text-sm">{t('jobs.decline') || 'Decline'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               onPress={() => acceptMutation.mutate()}
-              className="flex-1"
-            />
+              activeOpacity={0.8}
+              className="flex-1 h-13 rounded-2xl bg-[#3C01A7] shadow-premium justify-center items-center flex-row gap-2"
+            >
+              <Ionicons name="checkmark-circle" size={18} color="white" />
+              <Text className="text-white font-bold text-sm">{t('jobs.acceptShift') || 'Accept Shift'}</Text>
+            </TouchableOpacity>
           </View>
         );
 
       case BookingStatus.WORKER_ACCEPTED:
         return (
-          <Button
-            label={t('jobs.startJourneyBtn')}
-            variant="brand"
-            size="lg"
+          <TouchableOpacity
             onPress={handleStartJourney}
-            className="mb-8"
-          />
+            activeOpacity={0.85}
+            className="w-full h-14 rounded-2xl bg-[#3C01A7] shadow-premium flex-row justify-center items-center gap-2 mb-8 active:scale-[0.99]"
+          >
+            <Ionicons name="navigate-outline" size={20} color="white" />
+            <Text className="text-white font-extrabold text-base">
+              {t('jobs.startJourneyBtn') || 'Start Journey to Location →'}
+            </Text>
+          </TouchableOpacity>
         );
 
       case BookingStatus.ON_THE_WAY:
         return (
-          <Button
-            label={t('jobs.arrivedAtLocation')}
-            variant="primary"
-            size="lg"
+          <TouchableOpacity
             onPress={handleMarkArrived}
-            className="mb-8 bg-success"
-          />
+            activeOpacity={0.85}
+            className="w-full h-14 rounded-2xl bg-emerald-600 shadow-premium flex-row justify-center items-center gap-2 mb-8 active:scale-[0.99]"
+          >
+            <Ionicons name="location" size={20} color="white" />
+            <Text className="text-white font-extrabold text-base">
+              {t('jobs.arrivedAtLocation') || 'I Have Arrived at Location 📍'}
+            </Text>
+          </TouchableOpacity>
         );
 
       case BookingStatus.ARRIVED:
-        return (
-          <View className="mb-8">
-            <Card variant="default" className="p-5 bg-white border border-border-primary">
-              <Text className="text-text-primary text-sm font-extrabold mb-1">{t('jobs.verifyStartOtp')}</Text>
-              <Text className="text-text-secondary text-xs mb-4">
-                {t('jobs.enterCodeMsg')}
-              </Text>
-              
-              <View className="flex-row gap-3 mb-3">
-                <TextInput
-                  placeholder={t('jobs.fourDigitPin')}
-                  placeholderTextColor="rgb(var(--text-muted))"
-                  keyboardType="numeric"
-                  maxLength={4}
-                  value={otp}
-                  onChangeText={setOtp}
-                  className="flex-1 h-12 px-4 rounded-xl border bg-background-secondary text-text-primary text-center text-lg font-bold border-border-secondary focus:border-brand-orange focus:bg-background-card"
-                />
-                <Button
-                  label={t('jobs.verifyBtn')}
-                  variant="brand"
-                  size="md"
-                  onPress={handleStartJob}
-                  className="px-6 h-12"
-                />
-              </View>
-              {otpError ? (
-                <Text className="text-danger text-xs font-semibold">{otpError}</Text>
-              ) : null}
-            </Card>
-          </View>
-        );
+        return null; // Handled prominently in the dedicated Start OTP Card
 
       case BookingStatus.IN_PROGRESS:
         return (
-          <Button
-            label={t('jobs.completeJobShift')}
-            variant="brand"
-            size="lg"
+          <TouchableOpacity
             onPress={handleCompleteJob}
-            className="mb-8"
-          />
+            activeOpacity={0.85}
+            className="w-full h-14 rounded-2xl bg-emerald-600 shadow-premium flex-row justify-center items-center gap-2 mb-8 active:scale-[0.99]"
+          >
+            <Ionicons name="checkmark-done-circle" size={22} color="white" />
+            <Text className="text-white font-extrabold text-base">
+              {t('jobs.completeJobShift') || 'Complete Shift & Finish ✓'}
+            </Text>
+          </TouchableOpacity>
         );
 
       default:
@@ -390,140 +431,393 @@ export default function WorkerJobDetailScreen() {
     }
   };
 
-  const customerName = job?.customer?.full_name || 'Customer';
-  const customerPhone = job?.customer?.phone || '+919999999999';
-
   return (
-    <SafeAreaView className="flex-1 bg-background-secondary">
-      {/* Header */}
-      <View className="px-6 py-4 flex-row items-center border-b border-border-primary bg-white shadow-sm">
-        <TouchableOpacity onPress={() => router.back()} activeOpacity={0.8} className="mr-4">
-          <Ionicons name="arrow-back" size={22} color="rgb(var(--text-secondary))" />
-        </TouchableOpacity>
-        <Text className="text-text-primary text-lg font-extrabold flex-1" numberOfLines={1}>
-          {t('jobs.jobDetails')}
-        </Text>
-        <Badge
-          label={getStatusLabel(job.status)}
-          variant={getStatusVariant(job.status)}
-        />
+    <SafeAreaView className="flex-1 bg-slate-50">
+      {/* Top Header */}
+      <View className="bg-white border-b border-slate-200/80 px-4 py-3.5 shadow-sm">
+        <View className="max-w-md w-full mx-auto flex-row items-center justify-between">
+          <View className="flex-row items-center flex-1">
+            <TouchableOpacity
+              onPress={() => router.back()}
+              activeOpacity={0.7}
+              className="w-10 h-10 rounded-full bg-slate-100 justify-center items-center mr-3 active:bg-slate-200"
+            >
+              <Ionicons name="arrow-back" size={20} color="#1E293B" />
+            </TouchableOpacity>
+            <View>
+              <Text className="text-slate-900 text-base font-extrabold">
+                {t('jobs.jobDetails') || 'Job Details'}
+              </Text>
+              <Text className="text-slate-400 text-[10px] font-mono">
+                #{id.slice(0, 8).toUpperCase()}
+              </Text>
+            </View>
+          </View>
+          <Badge
+            label={getStatusLabel(job.status)}
+            variant={getStatusVariant(job.status)}
+            size="md"
+          />
+        </View>
       </View>
 
-      <ScrollView className="flex-1 px-6 pt-4" showsVerticalScrollIndicator={false}>
-        {/* Customer Location on Map */}
-        {[
-          BookingStatus.WORKER_ACCEPTED,
-          BookingStatus.ON_THE_WAY,
-          BookingStatus.ARRIVED,
-          BookingStatus.IN_PROGRESS,
-        ].includes(job.status) ? (
-          <View className="mb-6">
-            <Text className="text-text-primary text-sm font-extrabold mb-3">{t('jobs.serviceShiftRoute')}</Text>
-            <MapPlaceholder
-              workerLat={currentCoords?.lat}
-              workerLng={currentCoords?.lng}
-              destLat={job.lat}
-              destLng={job.lng}
-              workerName="You (Worker)"
-              statusText={getStatusLabel(job.status)}
-            />
-            {job.status === BookingStatus.ON_THE_WAY && (
-              <Button
-                label="Start Turn-by-Turn Navigation"
-                variant="primary"
-                size="md"
-                onPress={() => {
-                  const url = Platform.select({
-                    ios: `maps://?daddr=${job.lat},${job.lng}`,
-                    android: `google.navigation:q=${job.lat},${job.lng}`,
-                    default: `https://www.google.com/maps/dir/?api=1&destination=${job.lat},${job.lng}`
-                  });
-                  Linking.openURL(url).catch(() => {
-                    showAlert('Navigation Error', 'Could not open native navigation app.');
-                  });
-                }}
-                className="mt-3 w-full shadow-premium"
-              />
-            )}
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View className="max-w-md w-full mx-auto">
+          {/* Visual Step Progress Tracker */}
+          <View className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-premium mb-4">
+            <View className="flex-row justify-between items-center mb-2">
+              <Text className="text-slate-400 text-[10px] font-extrabold uppercase tracking-wider">
+                Shift Progress
+              </Text>
+              <Text className="text-purple-700 text-[11px] font-bold">
+                Step {Math.min(currentStep, 4) + 1} of 5
+              </Text>
+            </View>
+            <View className="flex-row items-center justify-between">
+              {[
+                { title: 'Offer', icon: 'receipt-outline' },
+                { title: 'Accepted', icon: 'thumbs-up-outline' },
+                { title: 'En Route', icon: 'navigate-outline' },
+                { title: 'Arrived', icon: 'location-outline' },
+                { title: 'Working', icon: 'construct-outline' },
+              ].map((step, idx) => {
+                const isPassed = currentStep > idx;
+                const isCurrent = currentStep === idx;
+                return (
+                  <View key={idx} className="items-center flex-1">
+                    <View
+                      className={`w-8 h-8 rounded-full items-center justify-center border-2 ${
+                        isCurrent
+                          ? 'bg-[#3C01A7] border-[#3C01A7] shadow-sm'
+                          : isPassed
+                          ? 'bg-emerald-500 border-emerald-500'
+                          : 'bg-slate-100 border-slate-200'
+                      }`}
+                    >
+                      <Ionicons
+                        name={isPassed ? 'checkmark' : (step.icon as any)}
+                        size={14}
+                        color={isPassed || isCurrent ? 'white' : '#94A3B8'}
+                      />
+                    </View>
+                    <Text
+                      className={`text-[9px] font-bold mt-1 text-center ${
+                        isCurrent
+                          ? 'text-[#3C01A7] font-extrabold'
+                          : isPassed
+                          ? 'text-emerald-600'
+                          : 'text-slate-400'
+                      }`}
+                      numberOfLines={1}
+                    >
+                      {step.title}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
           </View>
-        ) : null}
 
-        {/* Customer Detail Card */}
-        {[
-          BookingStatus.WORKER_ACCEPTED,
-          BookingStatus.ON_THE_WAY,
-          BookingStatus.ARRIVED,
-          BookingStatus.IN_PROGRESS,
-        ].includes(job.status) ? (
-          <View className="mb-6">
-            <Card variant="default" className="p-5">
-              <Text className="text-text-muted text-[10px] font-extrabold uppercase tracking-wider mb-3">
-                {t('jobs.customerInfo')}
+          {/* Dynamic Stage Banner */}
+          {job.status === BookingStatus.ARRIVED && (
+            <View className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 mb-4 flex-row items-center gap-3">
+              <View className="w-10 h-10 rounded-xl bg-amber-500/20 items-center justify-center">
+                <Ionicons name="key" size={20} color="#D97706" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-amber-900 font-extrabold text-sm">
+                  Arrived at Customer Location!
+                </Text>
+                <Text className="text-amber-700 text-xs mt-0.5">
+                  Ask customer for their 4-digit PIN to start the service.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {job.status === BookingStatus.ON_THE_WAY && (
+            <View className="bg-blue-500/10 border border-blue-500/30 rounded-2xl p-4 mb-4 flex-row items-center gap-3">
+              <View className="w-10 h-10 rounded-xl bg-blue-500/20 items-center justify-center">
+                <Ionicons name="navigate" size={20} color="#2563EB" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-blue-900 font-extrabold text-sm">
+                  Live GPS En Route Active
+                </Text>
+                <Text className="text-blue-700 text-xs mt-0.5">
+                  Customer can see your live position. Tap Arrived when at site.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {job.status === BookingStatus.IN_PROGRESS && (
+            <View className="bg-purple-500/10 border border-purple-500/30 rounded-2xl p-4 mb-4 flex-row items-center gap-3">
+              <View className="w-10 h-10 rounded-xl bg-purple-500/20 items-center justify-center">
+                <Ionicons name="flash" size={20} color="#7C3AED" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-purple-900 font-extrabold text-sm">
+                  Job In Progress ⚡
+                </Text>
+                <Text className="text-purple-700 text-xs mt-0.5">
+                  Service is currently running. Tap Complete when finished.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* DEDICATED VERIFY START OTP CARD (Prominent in ARRIVED state) */}
+          {job.status === BookingStatus.ARRIVED && (
+            <View className="bg-white rounded-3xl p-5 border border-purple-200/80 shadow-premium mb-4">
+              <View className="flex-row items-center justify-between mb-2">
+                <View className="flex-row items-center gap-2">
+                  <View className="w-7 h-7 rounded-lg bg-purple-100 items-center justify-center">
+                    <Ionicons name="shield-checkmark" size={16} color="#3C01A7" />
+                  </View>
+                  <Text className="text-slate-900 font-extrabold text-sm">
+                    {t('jobs.verifyStartOtp') || 'Verify Start OTP'}
+                  </Text>
+                </View>
+                <Badge label="Required to Start" variant="brand" size="sm" />
+              </View>
+
+              <Text className="text-slate-500 text-xs mb-4 leading-4.5">
+                {t('jobs.enterCodeMsg') || 'Enter the 4-digit code provided by the customer to start work.'}
+              </Text>
+
+              {/* Digit Box Display */}
+              <View className="flex-row justify-center gap-3 mb-4">
+                {[0, 1, 2, 3].map((idx) => {
+                  const digit = otp[idx] || '';
+                  const isCurrent = otp.length === idx;
+                  return (
+                    <View
+                      key={idx}
+                      className={`w-14 h-16 rounded-2xl border-2 items-center justify-center ${
+                        isCurrent
+                          ? 'border-[#3C01A7] bg-purple-50/60 shadow-sm'
+                          : digit
+                          ? 'border-slate-800 bg-white'
+                          : 'border-slate-200 bg-slate-50'
+                      }`}
+                    >
+                      <Text className="text-2xl font-extrabold text-slate-900 font-mono">
+                        {digit}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+
+              {/* Hidden/Active Input Controller */}
+              <TextInput
+                placeholder="Tap to enter 4-digit code"
+                placeholderTextColor="#94A3B8"
+                keyboardType="numeric"
+                maxLength={4}
+                value={otp}
+                onChangeText={(text) => {
+                  setOtp(text.replace(/[^0-9]/g, ''));
+                  if (otpError) setOtpError('');
+                }}
+                className="h-11 px-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-center text-sm font-bold mb-3 focus:border-[#3C01A7] focus:bg-white"
+              />
+
+              {otpError ? (
+                <View className="bg-red-50 border border-red-200 rounded-xl p-2.5 mb-3 flex-row items-center gap-2">
+                  <Ionicons name="alert-circle" size={16} color="#DC2626" />
+                  <Text className="text-red-700 text-xs font-semibold flex-1">{otpError}</Text>
+                </View>
+              ) : null}
+
+              {/* High-visibility Action Button */}
+              <TouchableOpacity
+                onPress={handleStartJob}
+                disabled={actionLoading || otp.length !== 4}
+                activeOpacity={0.85}
+                className={`w-full h-13 rounded-2xl flex-row justify-center items-center gap-2 shadow-sm ${
+                  otp.length === 4 && !actionLoading
+                    ? 'bg-[#3C01A7] active:scale-[0.99]'
+                    : 'bg-slate-300 opacity-80'
+                }`}
+              >
+                {actionLoading ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <>
+                    <Ionicons name="flash" size={18} color="white" />
+                    <Text className="text-white font-extrabold text-sm">
+                      {t('jobs.verifyBtn') || 'Verify OTP & Start Job'} ⚡
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Customer Profile & Direct Contact Card */}
+          {[
+            BookingStatus.WORKER_ACCEPTED,
+            BookingStatus.ON_THE_WAY,
+            BookingStatus.ARRIVED,
+            BookingStatus.IN_PROGRESS,
+          ].includes(job.status) && (
+            <View className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-premium mb-4">
+              <Text className="text-slate-400 text-[10px] font-extrabold uppercase tracking-wider mb-3">
+                {t('jobs.customerInfo') || 'Customer Information'}
               </Text>
               <View className="flex-row items-center justify-between">
                 <View className="flex-row items-center flex-1 mr-3">
-                  <View className="w-11 h-11 rounded-full bg-brand-orange/10 border border-brand-orange/20 justify-center items-center mr-3">
-                    <Ionicons name="person" size={20} color="rgb(var(--brand-orange))" />
+                  <View className="w-12 h-12 rounded-2xl bg-purple-100/70 border border-purple-200 items-center justify-center mr-3">
+                    <Ionicons name="person" size={22} color="#3C01A7" />
                   </View>
                   <View className="flex-1">
-                    <Text className="text-text-primary text-sm font-extrabold" numberOfLines={1}>
-                      {customerName}
-                    </Text>
-                    <Text className="text-text-secondary text-xs mt-0.5">Rating: 4.9★</Text>
+                    <View className="flex-row items-center gap-1.5">
+                      <Text className="text-slate-900 text-sm font-extrabold" numberOfLines={1}>
+                        {customerName}
+                      </Text>
+                      <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                    </View>
+                    <View className="flex-row items-center gap-1 mt-0.5">
+                      <Ionicons name="star" size={12} color="#F59E0B" />
+                      <Text className="text-slate-600 text-xs font-semibold">4.9</Text>
+                      <Text className="text-slate-400 text-[10px]">• Verified Customer</Text>
+                    </View>
                   </View>
                 </View>
+
+                {/* Call Customer Quick Action */}
                 <TouchableOpacity
                   onPress={() => handleCallCustomer(customerPhone)}
                   activeOpacity={0.8}
-                  className="w-10 h-10 rounded-xl bg-success/10 border border-success/20 justify-center items-center active:bg-success/20"
+                  className="px-3.5 py-2.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex-row items-center gap-1.5 active:bg-emerald-100"
                 >
-                  <Ionicons name="call" size={18} color="rgb(var(--success))" />
+                  <Ionicons name="call" size={16} color="#059669" />
+                  <Text className="text-emerald-700 text-xs font-bold">Call</Text>
                 </TouchableOpacity>
               </View>
-            </Card>
-          </View>
-        ) : null}
+            </View>
+          )}
 
-        {/* Job Info */}
-        <View className="mb-6">
-          <Card variant="default" className="p-5">
-            <Text className="text-text-muted text-[10px] font-extrabold uppercase tracking-wider mb-4">
-              {t('jobs.bookingDetails')}
+          {/* Route Map Section */}
+          {[
+            BookingStatus.WORKER_ACCEPTED,
+            BookingStatus.ON_THE_WAY,
+            BookingStatus.ARRIVED,
+            BookingStatus.IN_PROGRESS,
+          ].includes(job.status) && (
+            <View className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-premium mb-4">
+              <View className="flex-row items-center justify-between mb-3">
+                <View className="flex-row items-center gap-1.5">
+                  <Ionicons name="map-outline" size={16} color="#3C01A7" />
+                  <Text className="text-slate-900 text-xs font-extrabold">
+                    {t('jobs.serviceShiftRoute') || 'Service Location & Route'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => handleOpenNavigation(job.lat, job.lng)}
+                  activeOpacity={0.7}
+                  className="flex-row items-center gap-1 bg-purple-50 px-2.5 py-1 rounded-full border border-purple-200"
+                >
+                  <Ionicons name="navigate" size={12} color="#3C01A7" />
+                  <Text className="text-[#3C01A7] text-[10px] font-bold">Open Maps</Text>
+                </TouchableOpacity>
+              </View>
+
+              <MapPlaceholder
+                workerLat={currentCoords?.lat}
+                workerLng={currentCoords?.lng}
+                destLat={job.lat}
+                destLng={job.lng}
+                workerName="You (Worker)"
+                statusText={getStatusLabel(job.status)}
+              />
+
+              {/* Turn-by-Turn GPS Button */}
+              {[BookingStatus.WORKER_ACCEPTED, BookingStatus.ON_THE_WAY, BookingStatus.ARRIVED].includes(job.status) && (
+                <TouchableOpacity
+                  onPress={() => handleOpenNavigation(job.lat, job.lng)}
+                  activeOpacity={0.8}
+                  className="mt-3 w-full h-11 rounded-xl bg-slate-900 flex-row items-center justify-center gap-2 active:bg-slate-800"
+                >
+                  <Ionicons name="navigate-circle" size={18} color="white" />
+                  <Text className="text-white text-xs font-bold">
+                    Start Turn-by-Turn Navigation (Google Maps)
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Job & Payout Summary Card */}
+          <View className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-premium mb-4">
+            <Text className="text-slate-400 text-[10px] font-extrabold uppercase tracking-wider mb-3">
+              {t('jobs.bookingDetails') || 'Job & Earnings Details'}
             </Text>
 
-            <View className="flex-row justify-between mb-3.5">
-              <Text className="text-text-secondary text-xs">{t('jobs.jobType')}</Text>
-              <Text className="text-text-primary text-xs font-bold">{job.service?.name ?? 'Home Cleaning'}</Text>
+            <View className="flex-row items-center justify-between py-2 border-b border-slate-100">
+              <View className="flex-row items-center gap-2">
+                <Ionicons name="construct-outline" size={15} color="#64748B" />
+                <Text className="text-slate-600 text-xs font-medium">{t('jobs.jobType') || 'Job Type'}</Text>
+              </View>
+              <Text className="text-slate-900 text-xs font-bold capitalize">
+                {job.service?.name ?? 'Home Service'}
+              </Text>
             </View>
 
-            <View className="flex-row justify-between mb-3.5">
-              <Text className="text-text-secondary text-xs">{t('jobs.earningsShare')}</Text>
-              <Text className="text-brand-orange text-xs font-extrabold">₹{job.estimated_earnings ?? (job.total_amount * 0.85).toFixed(0)}</Text>
+            <View className="flex-row items-center justify-between py-2.5 border-b border-slate-100">
+              <View className="flex-row items-center gap-2">
+                <Ionicons name="cash-outline" size={15} color="#059669" />
+                <Text className="text-slate-600 text-xs font-medium">{t('jobs.earningsShare') || 'Your Net Payout'}</Text>
+              </View>
+              <View className="bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                <Text className="text-emerald-700 text-xs font-extrabold">₹{earningsAmount}</Text>
+              </View>
             </View>
 
-            <View className="flex-row justify-between mb-3.5">
-              <Text className="text-text-secondary text-xs">{t('bookings.paymentMode')}</Text>
-              <Text className="text-text-primary text-xs font-bold">{job.payment_mode}</Text>
+            <View className="flex-row items-center justify-between py-2 border-b border-slate-100">
+              <View className="flex-row items-center gap-2">
+                <Ionicons name="card-outline" size={15} color="#64748B" />
+                <Text className="text-slate-600 text-xs font-medium">{t('bookings.paymentMode') || 'Payment Mode'}</Text>
+              </View>
+              <Text className="text-slate-800 text-xs font-bold uppercase">
+                {job.payment_mode || 'ONLINE'}
+              </Text>
             </View>
 
-            <View className="h-[1px] bg-border-primary my-3" />
-
-            <View className="mb-2">
-              <Text className="text-text-secondary text-xs mb-1.5">{t('jobs.customerAddress')}</Text>
-              <Text className="text-text-primary text-xs leading-4.5">{job.address_line}</Text>
+            {/* Address */}
+            <View className="pt-3">
+              <View className="flex-row items-center gap-1.5 mb-1">
+                <Ionicons name="location-outline" size={14} color="#64748B" />
+                <Text className="text-slate-500 text-[11px] font-semibold">
+                  {t('jobs.customerAddress') || 'Customer Address'}
+                </Text>
+              </View>
+              <Text className="text-slate-800 text-xs font-medium leading-4.5 pl-5">
+                {job.address_line}
+              </Text>
             </View>
 
             {job.notes ? (
-              <View className="mt-3">
-                <Text className="text-text-secondary text-xs mb-1.5">{t('jobs.specialRequest')}</Text>
-                <Text className="text-text-secondary text-xs italic leading-4.5 font-medium">"{job.notes}"</Text>
+              <View className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200/60">
+                <Text className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1">
+                  {t('jobs.specialRequest') || 'Special Instructions'}
+                </Text>
+                <Text className="text-slate-700 text-xs italic leading-4 font-medium">
+                  "{job.notes}"
+                </Text>
               </View>
             ) : null}
-          </Card>
-        </View>
+          </View>
 
-        {/* Workflow actions */}
-        {renderWorkflowButton()}
+          {/* Workflow Bottom Actions */}
+          {renderWorkflowButton()}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );

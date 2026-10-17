@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { useState, useRef, useEffect } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -33,7 +34,7 @@ const getNativeMessaging = () => {
 
 export default function OtpVerifyScreen() {
   const router = useRouter();
-  const { phone, role } = useLocalSearchParams<{ phone: string; role: 'customer' | 'worker' }>();
+  const { phone, role, isForgotPin } = useLocalSearchParams<{ phone: string; role: 'customer' | 'worker'; isForgotPin?: string }>();
   const { setAuth } = useAuthStore();
 
   // OTP State
@@ -48,6 +49,9 @@ export default function OtpVerifyScreen() {
   // Security PIN Setup State
   const [showPinSetup, setShowPinSetup] = useState(false);
   const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [pinLoading, setPinLoading] = useState(false);
   const [authResponseData, setAuthResponseData] = useState<any>(null);
 
@@ -77,7 +81,40 @@ export default function OtpVerifyScreen() {
         startResendTimer();
         return;
       }
+
+      // Check if running inside Expo Go (which does not support native Firebase)
+      const Constants = require('expo-constants').default;
+      if (Constants.appOwnership === 'expo') {
+        throw new Error(
+          'SMS OTP verification requires an EAS standalone build or development client. Expo Go does not include native Firebase modules.'
+        );
+      }
+
+      try {
+        const firebaseApp = require('@react-native-firebase/app').default;
+        const apps = firebaseApp.apps || [];
+        const hasDefault = apps.some((a: any) => a.name === '[DEFAULT]' || a.name === 'DEFAULT');
+
+        if (!hasDefault) {
+          await firebaseApp.initializeApp({
+            apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyC7lRr_t9cXvXFx2IbNhJwQg2hRxbs9eQ8',
+            appId: Platform.OS === 'android'
+              ? '1:608422758746:android:b265c37c974a37b6498b63'
+              : (process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '1:608422758746:web:4596be66d801cae9498b63'),
+            projectId: 'volohome-16448',
+            databaseURL: 'https://volohome-16448-default-rtdb.firebaseio.com',
+            storageBucket: 'volohome-16448.firebasestorage.app',
+            messagingSenderId: '608422758746',
+          });
+        }
+      } catch (initErr) {
+        console.warn('[Firebase] initializeApp fallback note:', initErr);
+      }
+
       const nativeAuth = getNativeAuth();
+      if (!nativeAuth) {
+        throw new Error('Native Firebase Auth module could not be loaded.');
+      }
       const result = await nativeAuth().signInWithPhoneNumber(phone);
       setConfirmation(result);
       startResendTimer();
@@ -148,8 +185,8 @@ export default function OtpVerifyScreen() {
         console.warn('[FCM] Failed to get/register token during login:', err);
       }
 
-      // 5. Check if security PIN configuration is prompted
-      if (data.promptPinSetup) {
+      // 5. Check if security PIN configuration is prompted or recovering PIN
+      if (data.promptPinSetup || isForgotPin === 'true') {
         setShowPinSetup(true);
       } else {
         // Direct Route by role
@@ -169,27 +206,59 @@ export default function OtpVerifyScreen() {
     }
   };
 
+  const WEAK_PINS = [
+    '0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999',
+    '1234', '4321', '0123', '2345', '3456', '4567', '5678', '6789',
+    '000000', '111111', '222222', '333333', '444444', '555555', '666666', '777777', '888888', '999999',
+    '123456', '654321',
+  ];
+
   // Submit and save new PIN
   const handleSavePin = async () => {
     if (!/^\d{4,6}$/.test(newPin)) {
-      Alert.alert('Invalid PIN', 'PIN must be between 4 and 6 digits.');
+      Alert.alert('Invalid PIN', 'PIN must be between 4 and 6 numeric digits.');
+      return;
+    }
+
+    if (newPin !== confirmPin) {
+      Alert.alert('PIN Mismatch', 'The PIN and Confirm PIN do not match. Please re-enter carefully.');
+      return;
+    }
+
+    if (WEAK_PINS.includes(newPin)) {
+      Alert.alert('Weak PIN', 'This PIN is too common. Please choose a stronger PIN (avoid 1234, 0000, 1111, etc.).');
       return;
     }
 
     setPinLoading(true);
     try {
       await setPin(newPin);
-      Alert.alert('PIN Configured', 'Your security PIN has been successfully set.');
       
-      // Redirect
-      if (authResponseData?.user?.role === 'worker') {
+      const successTitle = isForgotPin === 'true' ? 'PIN Reset Complete' : 'PIN Configured';
+      const successMsg = isForgotPin === 'true'
+        ? 'Your security PIN has been successfully reset. Logging you in now!'
+        : 'Your security PIN has been successfully set.';
+
+      if (Platform.OS === 'web') {
+        alert(`${successTitle}\n\n${successMsg}`);
+      } else {
+        Alert.alert(successTitle, successMsg);
+      }
+      
+      // Redirect by role
+      const targetRole = authResponseData?.user?.role || role;
+      if (targetRole === 'worker') {
         router.replace('/(worker)/home');
       } else {
         router.replace('/(customer)/home');
       }
     } catch (err: any) {
       const errorMsg = err?.response?.data?.error ?? 'Unable to set security PIN. Please try again.';
-      Alert.alert('PIN Configuration Error', errorMsg);
+      if (Platform.OS === 'web') {
+        alert(`PIN Configuration Error\n\n${errorMsg}`);
+      } else {
+        Alert.alert('PIN Configuration Error', errorMsg);
+      }
     } finally {
       setPinLoading(false);
     }
@@ -197,55 +266,156 @@ export default function OtpVerifyScreen() {
 
   // RENDER PIN SETUP INTERFACE
   if (showPinSetup) {
+    const isResetting = isForgotPin === 'true';
+    const hasMismatch = confirmPin.length >= 4 && newPin !== confirmPin;
+    const isFormValid = newPin.length >= 4 && confirmPin.length >= 4 && newPin === confirmPin;
+
     return (
       <SafeAreaView className="flex-1 bg-white">
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
-          <View className="flex-1 px-6 pt-12 pb-8 justify-between">
-            <View>
-              {/* Header */}
-              <View className="mb-8 mt-4 items-center">
-                <View className="w-14 h-14 rounded-[20px] bg-primary/10 items-center justify-center mb-4 border border-primary/15">
-                  <Ionicons name="lock-closed" size={22} color="rgb(var(--primary))" />
+          <ScrollView
+            contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={true}
+          >
+            <View
+              className="flex-1 px-6 pt-8 pb-6 justify-between"
+              style={{ maxWidth: 440, width: '100%', alignSelf: 'center' }}
+            >
+              <View>
+                {/* Header */}
+                <View className="mb-6 mt-2 items-center">
+                  <View className="w-16 h-16 rounded-[22px] bg-purple-50 items-center justify-center mb-4 border border-purple-200 shadow-sm">
+                    <Ionicons name="key" size={28} color="#7C3AED" />
+                  </View>
+                  <Text className="text-text-primary text-2xl font-extrabold tracking-tight text-center">
+                    {isResetting ? 'Create New Security PIN' : 'Set Up Security PIN'}
+                  </Text>
+                  <Text className="text-text-secondary text-xs mt-2 font-semibold text-center leading-5 px-3">
+                    {isResetting
+                      ? 'Your phone number has been verified via OTP. Please enter and confirm your new 4-to-6 digit PIN.'
+                      : 'Set up a 4-to-6 digit security PIN for instant passcode access in the future.'}
+                  </Text>
                 </View>
-                <Text className="text-text-primary text-2xl font-extrabold tracking-tight text-center">Create Security PIN</Text>
-                <Text className="text-text-secondary text-xs mt-2 font-semibold text-center leading-5 px-6">
-                  Set up a 4-to-6 digit security PIN for quick passcode access in the future.
+
+                {/* Input 1: New PIN */}
+                <View className="mb-4">
+                  <View className="flex-row justify-between items-center mb-1.5">
+                    <Text className="text-text-secondary text-[11px] font-bold uppercase tracking-wider">
+                      New Security PIN (4-6 Digits)
+                    </Text>
+                    <Text className="text-slate-400 text-xs font-semibold">
+                      {newPin.length}/6
+                    </Text>
+                  </View>
+                  <View className="flex-row items-center bg-slate-50 border border-slate-200 rounded-2xl px-4 h-14 w-full focus-within:border-purple-600 focus-within:bg-white">
+                    <Ionicons name="lock-closed-outline" size={18} color="#64748B" style={{ marginRight: 10 }} />
+                    <TextInput
+                      className="flex-1 text-slate-900 text-lg font-mono font-bold h-full tracking-widest"
+                      placeholder="Enter new PIN"
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="number-pad"
+                      secureTextEntry={!showPassword}
+                      maxLength={6}
+                      autoFocus={true}
+                      value={newPin}
+                      onChangeText={setNewPin}
+                      returnKeyType="next"
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowPassword(!showPassword)}
+                      activeOpacity={0.7}
+                      className="p-1"
+                    >
+                      <Ionicons
+                        name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                        size={20}
+                        color="#64748B"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Input 2: Confirm PIN */}
+                <View className="mb-5">
+                  <View className="flex-row justify-between items-center mb-1.5">
+                    <Text className="text-text-secondary text-[11px] font-bold uppercase tracking-wider">
+                      Confirm New PIN
+                    </Text>
+                    {newPin.length >= 4 && confirmPin.length >= 4 && newPin === confirmPin ? (
+                      <View className="flex-row items-center">
+                        <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                        <Text className="text-emerald-600 text-xs font-bold ml-1">Matches</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <View className={`flex-row items-center bg-slate-50 border rounded-2xl px-4 h-14 w-full focus-within:bg-white ${
+                    hasMismatch ? 'border-red-400' : 'border-slate-200 focus-within:border-purple-600'
+                  }`}>
+                    <Ionicons name="shield-checkmark-outline" size={18} color={hasMismatch ? '#EF4444' : '#64748B'} style={{ marginRight: 10 }} />
+                    <TextInput
+                      className="flex-1 text-slate-900 text-lg font-mono font-bold h-full tracking-widest"
+                      placeholder="Re-enter new PIN"
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="number-pad"
+                      secureTextEntry={!showConfirmPassword}
+                      maxLength={6}
+                      value={confirmPin}
+                      onChangeText={setConfirmPin}
+                      onSubmitEditing={() => {
+                        if (isFormValid && !pinLoading) {
+                          handleSavePin();
+                        }
+                      }}
+                      returnKeyType="done"
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                      activeOpacity={0.7}
+                      className="p-1"
+                    >
+                      <Ionicons
+                        name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                        size={20}
+                        color="#64748B"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  {hasMismatch ? (
+                    <Text className="text-red-500 text-xs font-semibold mt-1.5 ml-1">
+                      PINs do not match. Please verify your entries.
+                    </Text>
+                  ) : null}
+                </View>
+
+                {/* Save Button */}
+                <TouchableOpacity
+                  onPress={handleSavePin}
+                  disabled={pinLoading || !isFormValid}
+                  activeOpacity={0.85}
+                  className="w-full py-4 rounded-2xl items-center justify-center flex-row mt-2 shadow-sm"
+                  style={{
+                    backgroundColor: (pinLoading || !isFormValid) ? 'rgba(124, 58, 237, 0.45)' : '#7C3AED',
+                  }}
+                >
+                  {pinLoading ? (
+                    <ActivityIndicator color="#ffffff" size="small" style={{ marginRight: 8 }} />
+                  ) : (
+                    <Ionicons name="checkmark-done" size={20} color="#ffffff" style={{ marginRight: 6 }} />
+                  )}
+                  <Text className="text-white text-base font-extrabold tracking-wide">
+                    {isResetting ? 'Save New PIN & Log In' : 'Set PIN & Continue'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View className="items-center mt-6">
+                <Text className="text-center text-slate-400 text-xs font-medium">
+                  🔒 Your PIN is securely encrypted with bcrypt.
                 </Text>
               </View>
-
-              {/* Pin Input Box */}
-              <View className="mb-6">
-                <Text className="text-text-secondary text-[10px] mb-2.5 font-bold uppercase tracking-wider text-center">New PIN Code</Text>
-                <View className="flex-row items-center bg-background-secondary border border-border-secondary rounded-2xl px-4 h-14 w-4/5 mx-auto">
-                  <TextInput
-                    className="flex-1 text-text-primary text-lg font-mono font-extrabold text-center h-full"
-                    placeholder="••••"
-                    placeholderTextColor="rgb(var(--text-muted))"
-                    keyboardType="number-pad"
-                    secureTextEntry
-                    maxLength={6}
-                    value={newPin}
-                    onChangeText={setNewPin}
-                  />
-                </View>
-              </View>
-
-              {/* Save Button */}
-              <Button
-                label="Save & Continue"
-                variant={role === 'customer' ? 'primary' : 'brand'}
-                disabled={pinLoading || newPin.length < 4}
-                loading={pinLoading}
-                size="lg"
-                onPress={handleSavePin}
-                className="w-4/5 mx-auto mt-2"
-              />
             </View>
-
-            <Text className="text-center text-text-muted text-[10px] font-semibold">
-              Your PIN is securely hashed and encrypted.
-            </Text>
-          </View>
+          </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
     );
@@ -257,81 +427,103 @@ export default function OtpVerifyScreen() {
   return (
     <SafeAreaView className="flex-1 bg-white">
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
-        <View className="flex-1 px-6 pt-12 pb-8 justify-between">
-          <View>
-            {/* Back Button */}
-            <TouchableOpacity
-              onPress={() => router.back()}
-              activeOpacity={0.8}
-              className="w-9 h-9 rounded-full bg-background-secondary justify-center items-center mb-6 active:bg-slate-100 border border-border-primary"
-            >
-              <Ionicons name="arrow-back" size={18} color="rgb(var(--text-secondary))" />
-            </TouchableOpacity>
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={true}
+        >
+          <View
+            className="flex-1 px-6 pt-6 pb-6 justify-between"
+            style={{ maxWidth: 440, width: '100%', alignSelf: 'center' }}
+          >
+            <View>
+              {/* Back Button */}
+              <TouchableOpacity
+                onPress={() => router.back()}
+                activeOpacity={0.8}
+                className="w-10 h-10 rounded-full bg-background-secondary justify-center items-center mb-6 active:bg-slate-100 border border-border-primary"
+              >
+                <Ionicons name="arrow-back" size={20} color="#334155" />
+              </TouchableOpacity>
 
-            {/* Header */}
-            <Text className="text-text-primary text-2xl font-extrabold mb-1 tracking-tight">Verify OTP</Text>
-            <Text className="text-text-secondary text-xs font-semibold mb-8 leading-5">
-              We sent a 6-digit verification code to{' '}
-              <Text className="text-text-primary font-bold">{phone}</Text>
-            </Text>
+              {/* Header */}
+              <Text className="text-text-primary text-2xl font-extrabold mb-1 tracking-tight">Verify OTP</Text>
+              <Text className="text-text-secondary text-xs font-semibold mb-8 leading-5">
+                We sent a 6-digit verification code to{' '}
+                <Text className="text-text-primary font-bold">{phone}</Text>
+              </Text>
 
-            {sending ? (
-              <View className="items-center py-12">
-                <ActivityIndicator color="rgb(var(--primary))" size="large" />
-                <Text className="text-text-muted text-[10px] font-bold mt-4 uppercase tracking-wider">Requesting OTP…</Text>
-              </View>
-            ) : (
-              <>
-                {/* OTP Boxes */}
-                <View className="flex-row justify-between mb-8">
-                  {otp.map((digit, idx) => (
-                    <TextInput
-                      key={idx}
-                      ref={(r) => { if (r) inputRefs.current[idx] = r; }}
-                      className={`w-11 h-14 rounded-2xl border text-center text-text-primary text-lg font-extrabold bg-background-secondary ${
-                        digit ? 'border-primary' : 'border-border-secondary'
-                      }`}
-                      keyboardType="numeric"
-                      maxLength={1}
-                      value={digit}
-                      onChangeText={(v) => handleOtpChange(v, idx)}
-                      onKeyPress={(e) => handleKeyPress(e, idx)}
-                      autoFocus={idx === 0}
-                    />
-                  ))}
+              {sending ? (
+                <View className="items-center py-12">
+                  <ActivityIndicator color="#3C01A7" size="large" />
+                  <Text className="text-text-muted text-[10px] font-bold mt-4 uppercase tracking-wider">Requesting OTP…</Text>
                 </View>
+              ) : (
+                <>
+                  {/* OTP Boxes - Centered and cleanly styled */}
+                  <View className="flex-row justify-center gap-2 mb-8">
+                    {otp.map((digit, idx) => (
+                      <TextInput
+                        key={idx}
+                        ref={(r) => { if (r) inputRefs.current[idx] = r; }}
+                        className={`w-12 h-14 rounded-2xl border text-center text-text-primary text-xl font-black bg-background-secondary ${
+                          digit ? 'border-primary' : 'border-border-secondary'
+                        }`}
+                        style={{
+                          width: 48,
+                          height: 56,
+                          borderColor: digit ? '#3C01A7' : '#CBD5E1',
+                          backgroundColor: '#F8FAFC',
+                        }}
+                        keyboardType="numeric"
+                        maxLength={1}
+                        value={digit}
+                        onChangeText={(v) => handleOtpChange(v, idx)}
+                        onKeyPress={(e) => handleKeyPress(e, idx)}
+                        autoFocus={idx === 0}
+                      />
+                    ))}
+                  </View>
 
-                {/* Verify Button */}
-                <Button
-                  label="Verify & Continue"
-                  variant={role === 'customer' ? 'primary' : 'brand'}
-                  disabled={loading || !isOtpComplete}
-                  loading={loading}
-                  size="lg"
-                  onPress={() => verifyOtp()}
-                  className="w-full mb-6"
-                />
-
-                {/* Resend Timer */}
-                <View className="items-center mt-2">
-                  {resendTimer > 0 ? (
-                    <Text className="text-text-secondary text-xs font-semibold">
-                      Resend OTP in <Text className="text-primary font-extrabold">{resendTimer}s</Text>
+                  {/* Verify Submit Button - Prominently Displayed & High-Contrast */}
+                  <TouchableOpacity
+                    onPress={() => verifyOtp()}
+                    disabled={loading || !isOtpComplete}
+                    activeOpacity={0.85}
+                    className="w-full py-4 rounded-2xl items-center justify-center flex-row mb-4 shadow-premium"
+                    style={{
+                      backgroundColor: (loading || !isOtpComplete) ? 'rgba(60, 1, 167, 0.45)' : '#3C01A7',
+                    }}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="#ffffff" size="small" style={{ marginRight: 8 }} />
+                    ) : null}
+                    <Text className="text-white text-base font-extrabold tracking-wide">
+                      Verify OTP & Continue
                     </Text>
-                  ) : (
-                    <TouchableOpacity onPress={sendOtp} activeOpacity={0.8} className="active:opacity-60">
-                      <Text className="text-primary text-xs font-bold uppercase tracking-wider">Resend OTP</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </>
-            )}
-          </View>
+                  </TouchableOpacity>
 
-          <Text className="text-center text-text-muted text-[10px] font-semibold">
-            Do not share the OTP with anyone.
-          </Text>
-        </View>
+                  {/* Resend Timer */}
+                  <View className="items-center mt-3">
+                    {resendTimer > 0 ? (
+                      <Text className="text-text-secondary text-xs font-semibold">
+                        Resend OTP in <Text className="text-[#3C01A7] font-extrabold">{resendTimer}s</Text>
+                      </Text>
+                    ) : (
+                      <TouchableOpacity onPress={sendOtp} activeOpacity={0.8} className="py-1 px-3">
+                        <Text className="text-[#3C01A7] text-xs font-bold uppercase tracking-wider">Resend OTP</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </>
+              )}
+            </View>
+
+            <Text className="text-center text-text-muted text-[10px] font-semibold mt-8">
+              Do not share the OTP with anyone.
+            </Text>
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

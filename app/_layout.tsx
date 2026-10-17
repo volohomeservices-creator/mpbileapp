@@ -30,6 +30,29 @@ if (Platform.OS === 'web') {
       }
     }
   };
+
+  // Prevent React DOM "NotFoundError: Failed to execute 'removeChild' on 'Node'" 
+  // caused by browser translation extensions or fast screen unmounts
+  if (typeof window !== 'undefined' && typeof Node !== 'undefined') {
+    const originalRemoveChild = Node.prototype.removeChild;
+    Node.prototype.removeChild = function <T extends Node>(child: T): T {
+      if (child.parentNode !== this) {
+        if (child.parentNode) {
+          return child.parentNode.removeChild(child);
+        }
+        return child;
+      }
+      return originalRemoveChild.call(this, child) as T;
+    };
+
+    const originalInsertBefore = Node.prototype.insertBefore;
+    Node.prototype.insertBefore = function <T extends Node>(node: T, child: Node | null): T {
+      if (child && child.parentNode !== this) {
+        return this.appendChild(node);
+      }
+      return originalInsertBefore.call(this, node, child) as T;
+    };
+  }
 }
 
 // Strip all console outputs in production release builds globally
@@ -42,6 +65,9 @@ if (!__DEV__) {
 
 import { useState } from 'react';
 import { BrandIntroScreen } from '@/components/BrandIntroScreen';
+import { storage } from '@/utils/storage';
+
+const HAS_SEEN_LAUNCH_KEY = 'volo_has_seen_brand_launch';
 
 import { MOBILE_CONFIG } from '@/lib/mobile-config';
 
@@ -63,7 +89,14 @@ function AppShell() {
   const router = useRouter();
   const segments = useSegments();
   const { isAuthenticated, isLoading, user, loadFromStorage, clearAuth } = useAuthStore();
+
+  // Intro plays on every app startup and page refresh
   const [isIntroComplete, setIsIntroComplete] = useState(false);
+
+  // Clean up legacy persistent skip flag if present
+  useEffect(() => {
+    storage.deleteItem(HAS_SEEN_LAUNCH_KEY).catch(() => {});
+  }, []);
 
   // Hydrate auth from SecureStore/localStorage on first mount
   useEffect(() => {
@@ -79,16 +112,18 @@ function AppShell() {
     return unsub;
   }, []);
 
-  // Route guard — only run once auth state is hydrated and intro screen has finished exit animation
+  // Route guard — hydrates immediately once auth state is checked.
+  // We intentionally allow this to route while BrandIntroScreen is playing its 1.5s animation
+  // so the home screen mounts behind it, firing queries and rendering skeletons in the background.
   const segmentsJoined = segments.join('/');
   useEffect(() => {
-    if (isLoading || !isIntroComplete) return;
+    if (isLoading) return;
 
     const rootSegment = segments[0];
     const inAuth = rootSegment === '(auth)';
     const inCustomer = rootSegment === '(customer)';
     const inWorker = rootSegment === '(worker)';
-    const isAtRoot = !rootSegment || rootSegment === 'index';
+    const isAtRoot = !rootSegment || (rootSegment as string) === 'index';
 
     if (!isAuthenticated) {
       if (!inAuth) {
@@ -97,6 +132,10 @@ function AppShell() {
     } else {
       // Authenticated users
       if (inAuth || isAtRoot) {
+        // Do not auto-redirect if user is currently on otp-verify completing verification or setting up new PIN
+        if (inAuth && segments[1] === 'otp-verify') {
+          return;
+        }
         // Redirect to their respective stack
         if (user?.role === 'worker') {
           router.replace('/(worker)/home');
@@ -111,28 +150,30 @@ function AppShell() {
         router.replace('/(customer)/home');
       }
     }
-  }, [isAuthenticated, isLoading, isIntroComplete, segmentsJoined, user?.role]);
+  }, [isAuthenticated, isLoading, segmentsJoined, user?.role]);
 
-  // Show the premium Brand Intro Screen while initializing and for at least 3 seconds
-  if (!isIntroComplete) {
-    return (
-      <BrandIntroScreen 
-        isInitializing={isLoading} 
-        onExitComplete={() => {
-          setIsIntroComplete(true);
-          SplashScreen.hideAsync().catch(() => {});
-        }} 
-      />
-    );
-  }
-
+  // Render the Stack behind the BrandIntroScreen overlay so home pages mount
+  // immediately and their data-fetching hooks fire during the 1.5s intro animation.
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#ffffff' } }}>
-      <Stack.Screen name="index" />
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(customer)" />
-      <Stack.Screen name="(worker)" />
-    </Stack>
+    <View style={{ flex: 1 }}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#ffffff' } }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(customer)" />
+        <Stack.Screen name="(worker)" />
+        <Stack.Screen name="+not-found" />
+      </Stack>
+
+      {!isIntroComplete && (
+        <BrandIntroScreen 
+          isInitializing={isLoading} 
+          onExitComplete={() => {
+            setIsIntroComplete(true);
+            SplashScreen.hideAsync().catch(() => {});
+          }} 
+        />
+      )}
+    </View>
   );
 }
 

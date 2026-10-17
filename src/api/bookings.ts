@@ -35,6 +35,33 @@ export const getServices = (): Promise<{ categories: ServiceCategoryWithItems[] 
 export const submitReview = (payload: { booking_id: string; rating: number; comment?: string }): Promise<{ success: boolean }> =>
   apiPost('/api/customer/reviews', payload);
 
+let cachedCustomerBanners: { banners: any[] } | null = null;
+
+export const getInitialCachedCustomerBanners = () => cachedCustomerBanners || undefined;
+
 /** Fetch active mobile banners. */
-export const getActiveBanners = (): Promise<{ banners: any[] }> =>
-  apiGet('/api/customer/banners');
+export const getActiveBanners = async (): Promise<{ banners: any[] }> => {
+  try {
+    const res = await apiGet<{ banners: any[] }>('/api/customer/banners?platform=mobile');
+    if (res && Array.isArray(res.banners)) {
+      cachedCustomerBanners = res;
+    }
+    return res;
+  } catch (err) {
+    if (cachedCustomerBanners) return cachedCustomerBanners;
+    throw err;
+  }
+};
+
+/** Fetch verified approved customer reviews & platform reputation metrics */
+export const getPublicReviews = (limit = 10): Promise<{
+  reputation: {
+    average_rating: number;
+    total_reviews: number;
+    recommendation_percentage: number;
+    rating_scale: number;
+  };
+  reviews: any[];
+}> => apiGet(`/api/public/reviews?limit=${limit}&platform=mobile`);
+
+

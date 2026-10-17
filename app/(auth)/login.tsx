@@ -9,15 +9,19 @@ import {
   ScrollView,
   Image,
   ActivityIndicator,
+  StyleSheet,
+  Dimensions,
 } from 'react-native';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Path, Circle } from 'react-native-svg';
 import { PhoneSchema } from '@volo/shared-types';
 import { preCheck, pinLogin } from '@/api/auth';
 import { useAuthStore } from '@/features/auth/authStore';
 import { Ionicons } from '@expo/vector-icons';
-import { Button } from '@/components/ui/Button';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Platform-resilient alert helper
 const showAlert = (title: string, message: string) => {
@@ -34,10 +38,16 @@ const getFriendlyErrorMessage = (err: any): { title: string; message: string } =
   const status = err?.response?.status;
   const msg = err?.response?.data?.error ?? err?.message ?? '';
 
-  if (status === 401 || code === 'INVALID_PIN' || msg.toLowerCase().includes('invalid pin') || msg.toLowerCase().includes('wrong pin') || msg.toLowerCase().includes('incorrect pin')) {
+  if (
+    status === 401 ||
+    code === 'INVALID_PIN' ||
+    msg.toLowerCase().includes('invalid pin') ||
+    msg.toLowerCase().includes('wrong pin') ||
+    msg.toLowerCase().includes('incorrect pin')
+  ) {
     return {
       title: 'Incorrect PIN',
-      message: msg || 'The PIN you entered is incorrect. Please try again carefully, or use the Forgot PIN option to reset it.',
+      message: msg || 'The PIN you entered is incorrect. Please try again carefully, or use the Forgot PIN option.',
     };
   }
   if (status === 429 || code === 'TOO_MANY_ATTEMPTS') {
@@ -87,7 +97,6 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       if (showPinInput) {
-        // Submit PIN Login
         if (pin.length < 4) {
           Alert.alert('Invalid PIN', 'Enter a 4-to-6 digit security PIN.');
           setLoading(false);
@@ -103,17 +112,20 @@ export default function LoginScreen() {
           router.replace('/(customer)/home');
         }
       } else {
-        // Pre-check flow
-        const result = await preCheck(digits);
-        if (result.authMethod === 'pin_required') {
-          setShowPinInput(true);
-        } else {
-          // Proceed to standard Firebase OTP verify
-          router.push({
-            pathname: '/(auth)/otp-verify',
-            params: { phone: `+91${digits}`, role },
-          });
+        try {
+          const result = await preCheck(digits);
+          if (result.authMethod === 'pin_required') {
+            setShowPinInput(true);
+            return;
+          }
+        } catch (preCheckErr) {
+          console.warn('[Login] preCheck failed, proceeding to OTP verification:', preCheckErr);
         }
+
+        router.push({
+          pathname: '/(auth)/otp-verify',
+          params: { phone: `+91${digits}`, role },
+        });
       }
     } catch (err: any) {
       const { title, message } = getFriendlyErrorMessage(err);
@@ -128,135 +140,498 @@ export default function LoginScreen() {
     setPin('');
   };
 
+  const handleForgotPin = () => {
+    const digits = phone.replace(/\D/g, '');
+    if (!digits || digits.length !== 10) {
+      showAlert('Phone Required', 'Please enter your 10-digit mobile number first.');
+      return;
+    }
+    router.push({
+      pathname: '/(auth)/otp-verify',
+      params: { phone: `+91${digits}`, role, isForgotPin: 'true' },
+    });
+  };
+
   const isPhoneValid = phone.replace(/\D/g, '').length === 10;
+  const isSubmitDisabled = loading || (showPinInput ? pin.length < 4 : !isPhoneValid);
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
-      >
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+    <View style={styles.screenContainer}>
+      {/* Top Left Organic Background Wave Decoration */}
+      <View style={styles.topWaveContainer} pointerEvents="none">
+        <Svg width={260} height={260} viewBox="0 0 260 260">
+          <Circle cx="0" cy="0" r="160" fill="#EFE8FC" opacity="0.6" />
+          <Circle cx="20" cy="20" r="110" fill="#E4D7FA" opacity="0.45" />
+        </Svg>
+      </View>
+
+      {/* Bottom Layered Wave Decoration */}
+      <View style={styles.bottomWaveContainer} pointerEvents="none">
+        <Svg width={SCREEN_WIDTH} height={160} viewBox={`0 0 ${SCREEN_WIDTH} 160`}>
+          <Path
+            d={`M0 60 Q ${SCREEN_WIDTH * 0.25} 110, ${SCREEN_WIDTH * 0.5} 80 T ${SCREEN_WIDTH} 40 L ${SCREEN_WIDTH} 160 L 0 160 Z`}
+            fill="#F4F0FD"
+            opacity="0.9"
+          />
+          <Path
+            d={`M0 90 Q ${SCREEN_WIDTH * 0.3} 50, ${SCREEN_WIDTH * 0.65} 100 T ${SCREEN_WIDTH} 75 L ${SCREEN_WIDTH} 160 L 0 160 Z`}
+            fill="#EBE4FB"
+            opacity="0.85"
+          />
+        </Svg>
+      </View>
+
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardContainer}
         >
-          <View className="flex-1 px-6 pt-12 pb-8 justify-between">
-            <View>
-              {/* Header & Logo Section */}
-              <View className="items-center mb-10 mt-4">
-                <Image
-                  source={require('../../assets/logo.jpeg')}
-                  style={{ width: 88, height: 88, borderRadius: 22, resizeMode: 'contain' }}
-                  className="mb-5 border border-border-primary shadow-premium"
-                />
-                <Text className="text-text-primary text-2xl font-extrabold tracking-tight">Welcome to VOLO</Text>
-                <Text className="text-text-secondary text-xs mt-1 font-semibold">
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.contentCard}>
+              {/* Logo */}
+              <View style={styles.logoSection}>
+                <View style={styles.logoWrapper}>
+                  <Image
+                    source={require('../../assets/volo logo3.jpeg')}
+                    resizeMode="contain"
+                    style={styles.logoImage}
+                  />
+                </View>
+
+                <Text style={styles.headingTitle}>Welcome to VOLO</Text>
+                <Text style={styles.headingSubtitle}>
                   Professional home services at your doorstep
                 </Text>
               </View>
 
-              {/* Role selector */}
+              {/* Role Selector: I WANT TO LOGIN AS */}
               {!showPinInput && (
-                <View className="mb-6">
-                  <Text className="text-text-secondary text-[10px] mb-2 font-bold uppercase tracking-wider">I want to login as</Text>
-                  <View className="flex-row gap-3">
-                    {(['customer', 'worker'] as const).map((r) => (
-                      <TouchableOpacity
-                        key={r}
-                        onPress={() => setRole(r)}
-                        activeOpacity={0.9}
-                        className={`flex-1 py-3.5 rounded-2xl border items-center flex-row justify-center space-x-2 ${
-                          role === r
-                            ? 'bg-primary border-primary shadow-premium-indigo'
-                            : 'bg-background-secondary border-border-secondary'
-                        }`}
+                <View style={styles.fieldSection}>
+                  <Text style={styles.fieldLabel}>I WANT TO LOGIN AS</Text>
+                  <View style={styles.roleRow}>
+                    {/* CUSTOMER Button */}
+                    <TouchableOpacity
+                      onPress={() => setRole('customer')}
+                      activeOpacity={0.9}
+                      style={[
+                        styles.roleButton,
+                        role === 'customer' ? styles.roleButtonActive : styles.roleButtonInactive,
+                      ]}
+                    >
+                      <Ionicons
+                        name="home"
+                        size={17}
+                        color={role === 'customer' ? '#FFFFFF' : '#475569'}
+                        style={styles.roleIcon}
+                      />
+                      <Text
+                        style={[
+                          styles.roleButtonText,
+                          role === 'customer' ? styles.roleTextActive : styles.roleTextInactive,
+                        ]}
                       >
-                        <Ionicons
-                          name={r === 'customer' ? 'home' : 'construct'}
-                          size={15}
-                          color={role === r ? '#ffffff' : 'rgb(var(--text-secondary))'}
-                        />
-                        <Text
-                          className={`font-bold text-xs uppercase tracking-wide ${
-                            role === r ? 'text-white' : 'text-text-secondary'
-                          }`}
-                        >
-                          {r === 'customer' ? 'Customer' : 'Worker'}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                        CUSTOMER
+                      </Text>
+                    </TouchableOpacity>
+
+                    {/* WORKER Button */}
+                    <TouchableOpacity
+                      onPress={() => setRole('worker')}
+                      activeOpacity={0.9}
+                      style={[
+                        styles.roleButton,
+                        role === 'worker' ? styles.roleButtonActive : styles.roleButtonInactive,
+                      ]}
+                    >
+                      <Ionicons
+                        name="construct"
+                        size={17}
+                        color={role === 'worker' ? '#FFFFFF' : '#475569'}
+                        style={styles.roleIcon}
+                      />
+                      <Text
+                        style={[
+                          styles.roleButtonText,
+                          role === 'worker' ? styles.roleTextActive : styles.roleTextInactive,
+                        ]}
+                      >
+                        WORKER
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
               )}
 
-              {/* Phone Input Box */}
-              <View className="mb-6">
-                <View className="flex-row justify-between items-center mb-2">
-                  <Text className="text-text-secondary text-[10px] font-bold uppercase tracking-wider">Mobile Number</Text>
+              {/* Mobile Number Input */}
+              <View style={styles.fieldSection}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.fieldLabel}>MOBILE NUMBER</Text>
                   {showPinInput && (
-                    <TouchableOpacity onPress={resetFlow} activeOpacity={0.8} className="flex-row items-center">
-                      <Text className="text-primary text-xs font-bold">Use different number</Text>
+                    <TouchableOpacity onPress={resetFlow} activeOpacity={0.8}>
+                      <Text style={styles.changeNumberText}>Change number</Text>
                     </TouchableOpacity>
                   )}
                 </View>
-                <View className="flex-row items-center bg-background-secondary border border-border-secondary rounded-2xl px-4 h-14 focus-within:border-primary">
-                  <Text className="text-text-secondary text-sm font-bold">🇮🇳 +91</Text>
-                  <View className="w-px h-5 bg-border-secondary mx-3" />
+
+                <View style={styles.inputContainer}>
+                  <View style={styles.flagPrefix}>
+                    <Text style={styles.flagText}>🇮🇳 +91</Text>
+                  </View>
+
+                  <View style={styles.inputDivider} />
+
                   <TextInput
-                    className="flex-1 text-text-primary text-sm font-bold h-full"
+                    style={styles.phoneTextInput}
                     placeholder="Enter 10-digit number"
-                    placeholderTextColor="rgb(var(--text-muted))"
+                    placeholderTextColor="#8E84B0"
                     keyboardType="phone-pad"
                     maxLength={10}
                     editable={!showPinInput}
                     value={phone}
                     onChangeText={setPhone}
+                    onSubmitEditing={() => {
+                      if (isPhoneValid && !loading && !showPinInput) {
+                        handleActionPress();
+                      }
+                    }}
+                    returnKeyType={showPinInput ? 'default' : 'next'}
                   />
                 </View>
               </View>
 
-              {/* Dynamic PIN Input Row */}
+              {/* PIN Input Row (When required) */}
               {showPinInput && (
-                <View className="mb-6">
-                  <Text className="text-text-secondary text-[10px] mb-2 font-bold uppercase tracking-wider">Security PIN</Text>
-                  <View className="flex-row items-center bg-background-secondary border border-border-secondary rounded-2xl px-4 h-14">
-                    <Ionicons name="lock-closed" size={16} color="rgb(var(--text-secondary))" className="mr-3" />
+                <View style={styles.fieldSection}>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.fieldLabel}>SECURITY PIN</Text>
+                    <TouchableOpacity onPress={handleForgotPin} activeOpacity={0.8}>
+                      <Text style={styles.forgotPinText}>Forgot PIN?</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.inputContainer}>
+                    <View style={styles.pinIconPrefix}>
+                      <Ionicons name="lock-closed" size={18} color="#2D008E" />
+                    </View>
+
+                    <View style={styles.inputDivider} />
+
                     <TextInput
-                      className="flex-1 text-text-primary text-sm font-bold h-full"
+                      style={styles.phoneTextInput}
                       placeholder="Enter security PIN"
-                      placeholderTextColor="rgb(var(--text-muted))"
+                      placeholderTextColor="#8E84B0"
                       keyboardType="number-pad"
                       secureTextEntry
                       maxLength={6}
+                      autoFocus={true}
                       value={pin}
                       onChangeText={setPin}
+                      onSubmitEditing={() => {
+                        if (pin.length >= 4 && !loading) {
+                          handleActionPress();
+                        }
+                      }}
+                      returnKeyType="done"
                     />
                   </View>
                 </View>
               )}
 
-              {/* Action Button CTA */}
-              <Button
-                label={showPinInput ? 'Log In' : 'Continue'}
-                variant={role === 'customer' ? 'primary' : 'brand'}
-                disabled={loading || !isPhoneValid}
-                loading={loading}
-                size="lg"
+              {/* Continue Button */}
+              <TouchableOpacity
                 onPress={handleActionPress}
-                className="w-full mt-2"
-              />
-            </View>
+                disabled={isSubmitDisabled}
+                activeOpacity={0.88}
+                style={[
+                  styles.continueButton,
+                  isSubmitDisabled ? styles.continueButtonDisabled : styles.continueButtonEnabled,
+                ]}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" style={{ marginRight: 8 }} />
+                ) : null}
+                <Text style={styles.continueButtonText}>
+                  {showPinInput ? 'Submit PIN & Log In' : 'Continue'}
+                </Text>
+              </TouchableOpacity>
 
-            {/* Terms Footer */}
-            <Text className="text-center text-text-muted text-[10px] font-semibold mt-8 leading-5 px-6">
-              By continuing, you agree to our{' '}
-              <Text className="text-primary font-bold">Terms of Service</Text> and{' '}
-              <Text className="text-primary font-bold">Privacy Policy</Text>
-            </Text>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+              {/* Forgot PIN fallback */}
+              {showPinInput && (
+                <TouchableOpacity
+                  onPress={handleForgotPin}
+                  activeOpacity={0.8}
+                  style={styles.smsOtpFallback}
+                >
+                  <Ionicons name="chatbubble-ellipses-outline" size={15} color="#2D008E" style={{ marginRight: 6 }} />
+                  <Text style={styles.smsOtpText}>Verify via SMS OTP</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Terms Footer */}
+              <View style={styles.footerContainer}>
+                <Text style={styles.termsText}>
+                  By continuing, you agree to our{' '}
+                  <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
+                  <Text style={styles.termsLink}>Privacy Policy</Text>
+                </Text>
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screenContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  topWaveContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    zIndex: 0,
+  },
+  bottomWaveContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 0,
+  },
+  safeArea: {
+    flex: 1,
+    zIndex: 1,
+  },
+  keyboardContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+  },
+  contentCard: {
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
+  },
+
+  /* Header & Logo */
+  logoSection: {
+    alignItems: 'center',
+    marginBottom: 28,
+  },
+  logoWrapper: {
+    width: 170,
+    height: 85,
+    borderRadius: 20,
+    backgroundColor: '#3500A3',
+    shadowColor: '#3500A3',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    elevation: 8,
+    marginBottom: 18,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoImage: {
+    width: 170,
+    height: 85,
+    borderRadius: 20,
+  },
+  headingTitle: {
+    fontSize: 27,
+    fontWeight: '900',
+    color: '#150E38',
+    textAlign: 'center',
+    letterSpacing: -0.6,
+  },
+  headingSubtitle: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#554C75',
+    textAlign: 'center',
+    marginTop: 6,
+  },
+
+  /* Form Fields */
+  fieldSection: {
+    marginBottom: 18,
+  },
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#554C75',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  changeNumberText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#26007A',
+  },
+  forgotPinText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#26007A',
+  },
+
+  /* Role Selector */
+  roleRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  roleButton: {
+    flex: 1,
+    height: 52,
+    borderRadius: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roleButtonActive: {
+    backgroundColor: '#26007A',
+    shadowColor: '#26007A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  roleButtonInactive: {
+    backgroundColor: '#F7FAFD',
+    borderWidth: 1.2,
+    borderColor: '#E4EAF4',
+  },
+  roleIcon: {
+    marginRight: 8,
+  },
+  roleButtonText: {
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  roleTextActive: {
+    color: '#FFFFFF',
+  },
+  roleTextInactive: {
+    color: '#475569',
+  },
+
+  /* Phone Input */
+  inputContainer: {
+    height: 54,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#DDD6F3',
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#26007A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  flagPrefix: {
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  flagText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#150E38',
+  },
+  pinIconPrefix: {
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inputDivider: {
+    width: 1,
+    height: 26,
+    backgroundColor: '#EAE5F8',
+  },
+  phoneTextInput: {
+    flex: 1,
+    height: '100%',
+    paddingHorizontal: 14,
+    fontSize: 15.5,
+    fontWeight: '700',
+    color: '#150E38',
+  },
+
+  /* Continue Button */
+  continueButton: {
+    height: 56,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    marginTop: 10,
+  },
+  continueButtonEnabled: {
+    backgroundColor: '#26007A',
+    shadowColor: '#26007A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  continueButtonDisabled: {
+    backgroundColor: '#A892EB', // Exact pastel purple from your design
+  },
+  continueButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  smsOtpFallback: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  smsOtpText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#26007A',
+  },
+
+  /* Footer */
+  footerContainer: {
+    marginTop: 32,
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
+  termsText: {
+    fontSize: 11,
+    color: '#584F75',
+    textAlign: 'center',
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  termsLink: {
+    color: '#26007A',
+    fontWeight: '800',
+  },
+});

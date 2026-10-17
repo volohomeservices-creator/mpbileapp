@@ -8,8 +8,8 @@ export const MOBILE_CONFIG = {
 
   // API Client variables
   API_TIMEOUT_MS: 15000,                // Timeout limit for server calls
-  QUERY_STALE_TIME_MS: 60000,           // React Query stale time for static data (1 min)
-  QUERY_GC_TIME_MS: 300000,             // React Query garbage collection time (5 min)
+  QUERY_STALE_TIME_MS: 300000,          // React Query stale time for static data (5 min cache)
+  QUERY_GC_TIME_MS: 900000,             // React Query garbage collection time (15 min cache)
 
   // File Upload configurations
   UPLOAD_MAX_WIDTH: 1280,               // Maximum scaling width for images (pixels)

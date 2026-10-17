@@ -12,7 +12,14 @@ const getAppName = () => {
 
 const getBundleId = () => 'com.volohome.app';
 
-
+const getVersionCode = () => {
+  if (process.env.EAS_BUILD_NUMBER) {
+    const parsed = parseInt(process.env.EAS_BUILD_NUMBER, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  // Strictly increasing timestamp in minutes (fits within Google Play limit, never conflicts)
+  return Math.floor(Date.now() / 60000);
+};
 
 export default ({ config }: ConfigContext): any => ({
   ...config,
@@ -40,6 +47,7 @@ export default ({ config }: ConfigContext): any => ({
   },
   android: {
     package: getBundleId(),
+    versionCode: getVersionCode(),
     googleServicesFile: './google-services.json',
     config: {
       googleMaps: {
@@ -55,7 +63,6 @@ export default ({ config }: ConfigContext): any => ({
     permissions: [
       'ACCESS_FINE_LOCATION',
       'ACCESS_COARSE_LOCATION',
-      'ACCESS_BACKGROUND_LOCATION',
       'CAMERA',
       'READ_EXTERNAL_STORAGE',
       'WRITE_EXTERNAL_STORAGE',
@@ -79,8 +86,9 @@ export default ({ config }: ConfigContext): any => ({
     [
       'expo-location',
       {
-        locationAlwaysAndWhenInUsePermission:
-          'VOLO uses your location while you are on an active job.',
+        locationWhenInUsePermission:
+          'VOLO uses your location to show available home services near you and navigate technicians to service locations.',
+        isAndroidBackgroundLocationEnabled: false,
       },
     ],
     [
@@ -104,10 +112,11 @@ export default ({ config }: ConfigContext): any => ({
     typedRoutes: true,
   },
   extra: {
+    ...config.extra,
     API_BASE_URL: process.env.API_BASE_URL,
     APP_VARIANT: process.env.APP_VARIANT,
     eas: {
-      projectId: "62410664-b000-4546-9644-71be5e237081",
+      projectId: "5725c0be-01ed-44b5-b6e7-7f13143cb136",
     },
   },
   scheme: 'volo',

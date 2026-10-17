@@ -66,25 +66,28 @@ export default function CustomerProfileScreen() {
     },
   });
 
-  // Deactivate Account Mutation
+  // Delete Account Mutation
   const deactivationMutation = useMutation({
     mutationFn: deactivateAccount,
     onSuccess: () => {
-      Alert.alert('Account Deactivated', 'Your customer account has been deactivated.');
+      Alert.alert(
+        'Account Deletion Scheduled',
+        'Your account has been deactivated and queued for permanent deletion within 30 days.'
+      );
       logout();
     },
     onError: (err: any) => {
-      Alert.alert('Deactivation Failed', err?.response?.data?.error ?? 'Unable to deactivate account.');
+      Alert.alert('Request Failed', err?.response?.data?.error ?? 'Unable to delete account. Contact support@voloapp.in.');
     },
   });
 
   const handleDeactivate = () => {
     Alert.alert(
-      'Deactivate Account',
-      'Are you absolutely sure you want to deactivate your Volo customer account?\n\nThis will log you out immediately and set your profile status to inactive.',
+      'Delete Account & Data',
+      'Are you sure you want to permanently delete your VOLO account?\n\n• Your active session will be terminated immediately.\n• Your personal profile, addresses, and saved data will be purged within 30 days.\n• Statutory financial and tax invoices will be retained as legally mandated.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Deactivate', style: 'destructive', onPress: () => deactivationMutation.mutate() }
+        { text: 'Delete Account', style: 'destructive', onPress: () => deactivationMutation.mutate() }
       ]
     );
   };
@@ -136,13 +139,20 @@ export default function CustomerProfileScreen() {
               </Text>
             </View>
 
-            {/* Complete Profile Action */}
+            {/* Edit / Complete Profile Action */}
             <TouchableOpacity
-              onPress={startEditing}
+              onPress={() => isEditing ? setIsEditing(false) : startEditing()}
               activeOpacity={0.8}
-              className="border border-border-secondary rounded-xl px-4 py-2 bg-white active:bg-slate-50 shadow-sm"
+              className="border border-border-secondary rounded-xl px-3.5 py-2 bg-white active:bg-slate-50 shadow-sm flex-row items-center gap-1.5"
             >
-              <Text className="text-text-primary text-xs font-extrabold">{t('profile.complete')}</Text>
+              <Ionicons 
+                name={isEditing ? "close-outline" : "pencil-outline"} 
+                size={14} 
+                color="rgb(var(--text-primary))" 
+              />
+              <Text className="text-text-primary text-xs font-extrabold">
+                {isEditing ? t('common.cancel') : (isProfileIncomplete ? t('profile.completeProfile') : t('profile.editProfile'))}
+              </Text>
             </TouchableOpacity>
           </View>
 

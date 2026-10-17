@@ -75,25 +75,25 @@ export default function WorkerProfileScreen() {
     },
   });
 
-  // Deactivate Account Mutation
+  // Delete Account Mutation
   const deactivationMutation = useMutation({
     mutationFn: deactivateWorkerAccount,
     onSuccess: () => {
-      Alert.alert('Account Deactivated', 'Your partner account has been deactivated.');
+      showAlert('Account Deletion Scheduled', 'Your Captain account has been deactivated and scheduled for permanent deletion within 30 days.');
       logout();
     },
     onError: (err: any) => {
-      Alert.alert('Deactivation Failed', err?.response?.data?.error ?? 'Unable to deactivate account.');
+      showAlert('Request Failed', err?.response?.data?.error ?? 'Unable to delete account. Contact support@voloapp.in.');
     },
   });
 
   const handleDeactivate = () => {
     Alert.alert(
-      'Deactivate Account',
-      'Are you absolutely sure you want to deactivate your Volo partner account?\n\nThis will log you out immediately and set your partner status to inactive.',
+      'Delete Captain Account & Data',
+      'Are you sure you want to permanently delete your Volo Captain account?\n\n• Your active session will be terminated immediately.\n• Your onboarding and KYC document records will be purged within 30 days.\n• Statutory financial earnings & settlement invoices will be retained as legally mandated.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Deactivate', style: 'destructive', onPress: () => deactivationMutation.mutate() }
+        { text: 'Delete Account', style: 'destructive', onPress: () => deactivationMutation.mutate() }
       ]
     );
   };
@@ -124,7 +124,7 @@ export default function WorkerProfileScreen() {
           <Text className="text-text-secondary text-xs mt-2 font-medium">{t('common.loading')}</Text>
         </View>
       ) : (
-        <ScrollView className="flex-1 px-6 pt-4" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
+        <ScrollView className="flex-1 px-6 pt-4" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
           
           {/* Header Profile Area */}
           <View className="flex-row justify-between items-start mb-4 mt-2">
@@ -137,19 +137,27 @@ export default function WorkerProfileScreen() {
               </View>
 
               <Text className="text-text-primary text-2xl font-extrabold tracking-tight leading-snug mt-1.5">
-                {userProfile?.full_name || 'Service Partner'}
+                {userProfile?.full_name || 'Volo Captain'}
               </Text>
               <Text className="text-text-secondary text-xs font-semibold mt-0.5">
                 {userProfile?.phone || '+91 9390884905'}
               </Text>
             </View>
 
+            {/* Edit / Complete Profile Action */}
             <TouchableOpacity
-              onPress={startEditing}
+              onPress={() => isEditing ? setIsEditing(false) : startEditing()}
               activeOpacity={0.8}
-              className="border border-border-secondary rounded-xl px-4 py-2 bg-white active:bg-slate-50 shadow-sm"
+              className="border border-border-secondary rounded-xl px-3.5 py-2 bg-white active:bg-slate-50 shadow-sm flex-row items-center gap-1.5"
             >
-              <Text className="text-text-primary text-xs font-extrabold">{t('profile.complete')}</Text>
+              <Ionicons 
+                name={isEditing ? "close-outline" : "pencil-outline"} 
+                size={14} 
+                color="rgb(var(--text-primary))" 
+              />
+              <Text className="text-text-primary text-xs font-extrabold">
+                {isEditing ? t('common.cancel') : (isProfileIncomplete ? t('profile.completeProfile') : t('profile.editProfile'))}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -351,7 +359,7 @@ export default function WorkerProfileScreen() {
             className="py-3 items-center justify-center active:opacity-60 mb-6"
           >
             <Text className="text-danger text-xs font-extrabold uppercase tracking-wider">
-              {deactivationMutation.isPending ? 'Deactivating...' : t('profile.deactivatePartnerAccount')}
+              {deactivationMutation.isPending ? 'Deactivating...' : 'Deactivate Captain Account'}
             </Text>
           </TouchableOpacity>
 
@@ -359,9 +367,9 @@ export default function WorkerProfileScreen() {
           <View className="mb-4">
             <Card variant="brand-orange" className="p-5 flex-row justify-between items-center relative overflow-hidden bg-brand-orange/5">
               <View className="flex-1 pr-6">
-                <Text className="text-text-primary text-sm font-extrabold">{t('profile.referPartnerTitle')}</Text>
+                <Text className="text-text-primary text-sm font-extrabold">Refer a Fellow Captain</Text>
                 <Text className="text-text-secondary text-[10px] font-bold mt-1 leading-snug">
-                  {t('profile.referPartnerSubtitle')}
+                  Invite other professionals to join the Volo Captain fleet and earn bonus rewards.
                 </Text>
               </View>
               <View className="w-10 h-10 bg-brand-orange/10 rounded-xl items-center justify-center">

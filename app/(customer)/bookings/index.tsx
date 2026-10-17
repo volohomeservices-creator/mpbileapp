@@ -196,7 +196,7 @@ export default function BookingsListScreen() {
           keyExtractor={(item) => item.id}
           initialNumToRender={5}
           maxToRenderPerBatch={10}
-          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 32 }}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 110 }}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (
             <BookingCard

@@ -69,3 +69,22 @@ export const acceptManualOffer = (offerId: string): Promise<{ success: boolean }
 /** Reject a direct manual offer. */
 export const rejectManualOffer = (offerId: string, reason = 'DECLINED_BY_WORKER'): Promise<{ success: boolean }> =>
   apiPost(`/api/worker/manual-offers/${offerId}/reject`, { reason });
+
+let cachedWorkerBanners: { banners: any[] } | null = null;
+
+export const getInitialCachedWorkerBanners = () => cachedWorkerBanners || undefined;
+
+/** Get active worker announcement banners and incentives. */
+export const getWorkerBanners = async (): Promise<{ banners: any[] }> => {
+  try {
+    const res = await apiGet<{ banners: any[] }>('/api/worker/banners?platform=mobile');
+    if (res && Array.isArray(res.banners)) {
+      cachedWorkerBanners = res;
+    }
+    return res;
+  } catch (err) {
+    if (cachedWorkerBanners) return cachedWorkerBanners;
+    throw err;
+  }
+};
+

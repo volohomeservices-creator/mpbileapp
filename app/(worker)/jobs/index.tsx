@@ -101,14 +101,14 @@ export default function WorkerJobsScreen() {
         </View>
       ) : (
         <FlashList
-          data={jobs}
-          keyExtractor={(item) => item.id}
-          estimatedItemSize={200}
+          data={jobs as any[]}
+          keyExtractor={(item: any) => item.id}
+          {...({ estimatedItemSize: 200 } as any)}
           initialNumToRender={5}
           maxToRenderPerBatch={10}
-          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 32 }}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => (
+          renderItem={({ item }: { item: any }) => (
             <JobCard
               job={item}
               onPress={() => router.push(`/(worker)/jobs/${item.id}`)}

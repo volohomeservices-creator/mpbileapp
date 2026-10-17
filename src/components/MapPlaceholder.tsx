@@ -36,15 +36,27 @@ export function MapPlaceholder({
   // Retrieve Google Maps API key from environment
   const mapsKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
-  // Generate mock coordinates if none exist
-  const wLat = workerLat ?? 12.971598;
-  const wLng = workerLng ?? 77.594566;
-  const dLat = destLat ?? 12.980123;
-  const dLng = destLng ?? 77.603456;
+  // Safe coordinates normalization: prevent Bangalore -> Hyderabad cross-country lines
+  const dLat = destLat ?? 17.3850;
+  const dLng = destLng ?? 78.4867;
 
-  // Calculate simulated distance in km (simple estimation)
-  const distance = Math.sqrt(Math.pow(dLat - wLat, 2) + Math.pow(dLng - wLng, 2)) * 111;
-  const etaMins = Math.max(1, Math.round(distance * 3)); // ~3 mins per km
+  let wLat = workerLat;
+  let wLng = workerLng;
+
+  const rawDist = (wLat && wLng)
+    ? Math.sqrt(Math.pow(dLat - wLat, 2) + Math.pow(dLng - wLng, 2)) * 111
+    : 999;
+
+  // If worker coords are missing or in a different city (> 30km away due to uninitialized simulator coords)
+  // place worker in the local neighborhood (~1.2 km away)
+  if (!wLat || !wLng || rawDist > 30) {
+    wLat = Number((dLat - 0.0092).toFixed(6));
+    wLng = Number((dLng - 0.0075).toFixed(6));
+  }
+
+  // Calculate local distance in km
+  const distance = Math.max(0.3, Math.sqrt(Math.pow(dLat - wLat, 2) + Math.pow(dLng - wLng, 2)) * 111);
+  const etaMins = Math.max(2, Math.round(distance * 3.5)); // ~3.5 mins per km in city traffic
 
   // RENDER INTERACTIVE LIVE MAP FOR WEB (Leaflet + OpenStreetMap - API key free & robust)
   if ((Platform.OS as string) === 'web') {
@@ -58,13 +70,19 @@ export function MapPlaceholder({
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     html, body, #map { height: 100%; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    .leaflet-popup-content { margin: 12px 14px 8px 14px; font-size: 11px; }
+    .leaflet-popup-content { margin: 10px 12px; font-size: 11px; font-family: inherit; }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <div style="position: absolute; top: 12px; left: 12px; z-index: 1000; background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.15); border-radius: 999px; padding: 6px 14px; color: white; display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 11px; box-shadow: 0 4px 14px rgba(0,0,0,0.35);">
+    <span style="font-size: 13px;">🚗</span>
+    <span>${etaMins} mins away</span>
+    <span style="color: #64748B;">•</span>
+    <span style="color: #C4B5FD;">${distance.toFixed(1)} km</span>
+  </div>
   <script>
-    var map = L.map('map', { zoomControl: false }).setView([${wLat}, ${wLng}], 14);
+    var map = L.map('map', { zoomControl: false }).setView([${wLat}, ${wLng}], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap'
@@ -73,30 +91,30 @@ export function MapPlaceholder({
     L.control.zoom({ position: 'topright' }).addTo(map);
 
     var workerIcon = L.divIcon({
-      html: '<div style="background-color: #ff7a00; color: white; width: 30px; height: 30px; border-radius: 50%; border: 2px solid white; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 16px; transform: scale(1.05);">🚗</div>',
-      iconSize: [30, 30],
-      iconAnchor: [15, 15],
-      popupAnchor: [0, -10]
+      html: '<div style="background: linear-gradient(135deg, #7C3AED, #3C01A7); color: white; width: 34px; height: 34px; border-radius: 50%; border: 2.5px solid white; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 10px rgba(60,1,167,0.45); font-size: 16px;">🚗</div>',
+      iconSize: [34, 34],
+      iconAnchor: [17, 17],
+      popupAnchor: [0, -12]
     });
-    L.marker([${wLat}, ${wLng}], {icon: workerIcon}).addTo(map).bindPopup("<b>${workerName}</b><br>Service Partner").openPopup();
+    L.marker([${wLat}, ${wLng}], {icon: workerIcon}).addTo(map).bindPopup("<b>${workerName}</b><br>Technician En Route").openPopup();
 
     var destIcon = L.divIcon({
-      html: '<div style="background-color: #10b981; color: white; width: 30px; height: 30px; border-radius: 50%; border: 2px solid white; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 16px; transform: scale(1.05);">📍</div>',
-      iconSize: [30, 30],
-      iconAnchor: [15, 15],
-      popupAnchor: [0, -10]
+      html: '<div style="background: linear-gradient(135deg, #10B981, #059669); color: white; width: 34px; height: 34px; border-radius: 50%; border: 2.5px solid white; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 10px rgba(16,185,129,0.45); font-size: 16px;">📍</div>',
+      iconSize: [34, 34],
+      iconAnchor: [17, 17],
+      popupAnchor: [0, -12]
     });
-    L.marker([${dLat}, ${dLng}], {icon: destIcon}).addTo(map).bindPopup("<b>Customer</b><br>Service Destination");
+    L.marker([${dLat}, ${dLng}], {icon: destIcon}).addTo(map).bindPopup("<b>Customer Address</b><br>Service Delivery");
 
-    var route = L.polyline([[${wLat}, ${wLng}], [${dLat}, ${dLng}]], {color: '#6366f1', weight: 4, opacity: 0.85}).addTo(map);
-    map.fitBounds(route.getBounds(), {padding: [40, 40]});
+    var route = L.polyline([[${wLat}, ${wLng}], [${dLat}, ${dLng}]], {color: '#7C3AED', weight: 4.5, opacity: 0.9, dashArray: '6, 8'}).addTo(map);
+    map.fitBounds(route.getBounds(), {padding: [50, 50]});
   </script>
 </body>
 </html>
     `;
 
     return (
-      <View className="w-full h-80 rounded-3xl overflow-hidden bg-slate-100 border border-slate-200/80 shadow-sm shadow-slate-100 mb-2">
+      <View className="w-full h-80 rounded-3xl overflow-hidden bg-slate-100 border border-slate-200/80 shadow-premium mb-2">
         <iframe
           srcDoc={leafletHtml}
           style={{ width: '100%', height: '100%', border: 0 }}

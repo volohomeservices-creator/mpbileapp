@@ -1,9 +1,10 @@
-import { View, Text, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { useState } from 'react';
+import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, TextInput } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { getSettlements } from '@/api/settlements';
+import { getSettlements, getWorkerBankAccount, updateWorkerUpiId } from '@/api/settlements';
 import { useRefreshOnFocus } from '@/hooks/useRefreshOnFocus';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -20,7 +21,42 @@ export default function WorkerSettlementsScreen() {
     queryFn: getSettlements,
   });
 
+  const { data: bankData, refetch: refetchBank } = useQuery({
+    queryKey: ['worker-bank-account'],
+    queryFn: getWorkerBankAccount,
+  });
+
   useRefreshOnFocus(refetch);
+  useRefreshOnFocus(refetchBank);
+
+  const [isEditingUpi, setIsEditingUpi] = useState(false);
+  const [upiInput, setUpiInput] = useState('');
+  const [savingUpi, setSavingUpi] = useState(false);
+
+  const account = bankData?.account || null;
+
+  async function handleSaveUpi() {
+    const clean = upiInput.trim();
+    if (!/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/.test(clean)) {
+      alert('Invalid UPI ID format. Example: mobile@upi or name@okaxis');
+      return;
+    }
+    setSavingUpi(true);
+    try {
+      const res = await updateWorkerUpiId(clean);
+      if (res?.success) {
+        await refetchBank();
+        setIsEditingUpi(false);
+        alert('Instant UPI ID linked successfully!');
+      } else {
+        alert(res?.error || 'Failed to link UPI ID.');
+      }
+    } catch (e: any) {
+      alert(e.message || 'Network error.');
+    } finally {
+      setSavingUpi(false);
+    }
+  }
 
   const settlements = data?.settlements ?? [];
   const totalPayout = data?.total ?? 0;
@@ -68,18 +104,112 @@ export default function WorkerSettlementsScreen() {
       ) : (
         <View className="flex-1">
           {/* Total Settlements Summary */}
-          <View className="px-6 pt-6 pb-4">
-            <Card variant="brand-orange" className="p-6 relative overflow-hidden bg-brand-orange/5 border-brand-orange/15 shadow-premium">
-              {/* Decorative Glow */}
+          <View className="px-6 pt-5 pb-3">
+            <Card variant="brand-orange" className="p-5 relative overflow-hidden bg-brand-orange/5 border-brand-orange/15 shadow-premium">
               <View className="absolute -right-16 -top-16 w-36 h-36 rounded-full bg-brand-orange/10" />
 
-              <Text className="text-brand-orange text-xs font-bold uppercase tracking-wider mb-2">
+              <Text className="text-brand-orange text-xs font-bold uppercase tracking-wider mb-1">
                 {t('settlements.totalPayouts')}
               </Text>
-              <Text className="text-text-primary text-4xl font-extrabold">
+              <Text className="text-text-primary text-3xl font-extrabold">
                 {formatCurrency(totalPayout)}
               </Text>
             </Card>
+
+            {/* Payout Destination Card (Bank & Instant UPI) */}
+            <View className="mt-3 p-4 rounded-2xl bg-white border border-border-primary shadow-sm">
+              <View className="flex-row justify-between items-center pb-2 border-b border-slate-100">
+                <Text className="text-[10px] font-black uppercase tracking-wider text-text-muted">
+                  Payout Destination
+                </Text>
+                <View className="flex-row items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  <Ionicons name="flash" size={10} color="#047857" />
+                  <Text className="text-[9px] font-extrabold text-emerald-800 uppercase">
+                    {account?.upi_id ? 'Instant UPI Mode' : 'Bank Transfer (IMPS)'}
+                  </Text>
+                </View>
+              </View>
+
+              {account ? (
+                <View className="mt-2.5">
+                  <View className="flex-row justify-between items-center">
+                    <View>
+                      <Text className="text-xs font-bold text-text-primary">
+                        {account.bank_name || 'Bank Account'}
+                      </Text>
+                      <Text className="text-[11px] font-mono text-text-muted mt-0.5">
+                        {account.masked_account_number || `•••• ${account.account_last_four}`} • {account.ifsc_code}
+                      </Text>
+                    </View>
+                    <Badge
+                      label={account.verification_status || 'VERIFIED'}
+                      variant={account.verification_status === 'VERIFIED' ? 'success' : 'warning'}
+                      size="sm"
+                    />
+                  </View>
+
+                  {/* UPI VPA Display / Inline Update */}
+                  <View className="mt-2.5 pt-2 border-t border-slate-100">
+                    <View className="flex-row justify-between items-center">
+                      <View>
+                        <Text className="text-[10px] font-extrabold uppercase text-slate-400">
+                          Linked UPI ID (Zero Fee)
+                        </Text>
+                        <Text className="text-xs font-black text-brand-orange font-mono mt-0.5">
+                          {account.upi_id || 'Not linked'}
+                        </Text>
+                      </View>
+                      {!isEditingUpi && (
+                        <TouchableOpacity
+                          onPress={() => {
+                            setUpiInput(account.upi_id || '');
+                            setIsEditingUpi(true);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 active:bg-slate-200"
+                        >
+                          <Text className="text-[10px] font-bold text-slate-700">
+                            {account.upi_id ? 'Change' : '+ Link UPI'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {isEditingUpi && (
+                      <View className="mt-2 flex-row items-center gap-2">
+                        <TextInput
+                          placeholder="e.g. mobile@upi"
+                          value={upiInput}
+                          onChangeText={setUpiInput}
+                          autoCapitalize="none"
+                          className="flex-1 px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-text-primary"
+                        />
+                        <TouchableOpacity
+                          onPress={handleSaveUpi}
+                          disabled={savingUpi}
+                          className="px-3 py-1.5 rounded-xl bg-brand-orange active:bg-orange-600"
+                        >
+                          {savingUpi ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                          ) : (
+                            <Text className="text-xs font-bold text-white">Save</Text>
+                          )}
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => setIsEditingUpi(false)}
+                          className="px-2 py-1.5"
+                        >
+                          <Text className="text-xs font-bold text-slate-400">Cancel</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              ) : (
+                <Text className="text-xs text-text-muted mt-2">
+                  No bank account linked. Payouts require a verified bank account.
+                </Text>
+              )}
+            </View>
           </View>
 
           {/* Settlements List */}

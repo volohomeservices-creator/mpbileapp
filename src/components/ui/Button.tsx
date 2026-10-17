@@ -47,8 +47,19 @@ export function Button({
     sizeStyle = 'py-2 px-4 h-9';
     textSize = 'text-xs';
   } else if (size === 'lg') {
-    sizeStyle = 'py-4.5 px-8 h-14';
+    sizeStyle = 'py-4 px-8 h-14';
     textSize = 'text-base';
+  }
+
+  let inlineBg: string | undefined = undefined;
+  if (variant === 'primary') {
+    inlineBg = disabled || loading ? 'rgba(60, 1, 167, 0.45)' : '#3C01A7';
+  } else if (variant === 'brand') {
+    inlineBg = disabled || loading ? 'rgba(60, 1, 167, 0.45)' : '#3C01A7';
+  } else if (variant === 'danger') {
+    inlineBg = disabled || loading ? 'rgba(239, 68, 68, 0.45)' : '#EF4444';
+  } else if (variant === 'secondary') {
+    inlineBg = '#F8FAFC';
   }
 
   return (
@@ -56,6 +67,7 @@ export function Button({
       disabled={disabled || loading}
       activeOpacity={0.85}
       className={`${baseStyle} ${variantStyle} ${sizeStyle} ${className}`}
+      style={[{ backgroundColor: inlineBg }, props.style]}
       {...props}
     >
       {loading ? (

@@ -13,6 +13,32 @@ export const topUpCustomerWallet = (amount: number): Promise<any> =>
 export const getWorkerEarnings = (): Promise<any> =>
   apiGet('/api/worker/earnings');
 
-/** Top up worker commission wallet balance. */
+/** Top up worker commission wallet balance (legacy direct). */
 export const topUpWorkerWallet = (amount: number): Promise<any> =>
   apiPost('/api/worker/earnings', { amount });
+
+/** Create a Razorpay order for Captain wallet top-up. Returns checkout details. */
+export const createWalletTopUpOrder = (amount: number): Promise<{
+  success: boolean;
+  error?: string;
+  checkout?: {
+    keyId: string;
+    orderId: string;
+    amount: number;
+    currency: string;
+    displayAmount: number;
+  };
+}> => apiPost('/api/worker/wallet-topup', { amount });
+
+/** Verify Razorpay payment for wallet top-up and credit the wallet. */
+export const verifyWalletTopUp = (payload: {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}): Promise<{
+  success: boolean;
+  balance?: number;
+  amount?: number;
+  alreadyProcessed?: boolean;
+  error?: string;
+}> => apiPost('/api/worker/wallet-topup/verify', payload);

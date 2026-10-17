@@ -8,16 +8,13 @@ const extra = Constants.expoConfig?.extra as Record<string, string> | undefined;
  * Set via API_BASE_URL in the appropriate .env.* file.
  * Never hardcode URLs — they change per environment.
  */
+const envApiUrl = process.env.EXPO_PUBLIC_API_URL || extra?.API_BASE_URL;
+
 const defaultApiUrl = Platform.OS === 'web'
-  ? (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8081')
-  : 'http://192.168.0.103:3000';
+  ? 'http://localhost:5001'
+  : 'http://localhost:5001';
 
-let resolvedUrl = extra?.API_BASE_URL ?? defaultApiUrl;
-if (Platform.OS === 'web') {
-  resolvedUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8081';
-}
-
-export const API_BASE_URL: string = resolvedUrl;
+export const API_BASE_URL: string = envApiUrl || defaultApiUrl;
 
 export const APP_VARIANT: string = extra?.APP_VARIANT ?? 'development';
 

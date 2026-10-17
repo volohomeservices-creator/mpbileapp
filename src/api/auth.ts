@@ -32,6 +32,12 @@ export async function getMe(): Promise<AuthUser> {
   return apiGet<AuthUser>('/api/auth/me');
 }
 
+const formatPhone = (phone: string) => {
+  const digits = phone.replace(/\D/g, '');
+  const tenDigits = digits.length > 10 ? digits.slice(-10) : digits;
+  return `+91${tenDigits}`;
+};
+
 /**
  * Pre-check auth method for a mobile phone number.
  */
@@ -41,7 +47,7 @@ export async function preCheck(phone: string): Promise<{
   hasEmail: boolean;
 }> {
   return apiPost('/api/auth/pre-check', {
-    phone,
+    phone: formatPhone(phone),
     recaptchaToken: 'BYPASS_TOKEN_VOLO_DEV_SECRET',
   });
 }
@@ -51,7 +57,7 @@ export async function preCheck(phone: string): Promise<{
  */
 export async function pinLogin(phone: string, pin: string): Promise<LoginResponse> {
   return apiPost('/api/auth/pin-login', {
-    phone,
+    phone: formatPhone(phone),
     pin,
     recaptchaToken: 'BYPASS_TOKEN_VOLO_DEV_SECRET',
   });

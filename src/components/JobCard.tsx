@@ -42,7 +42,7 @@ export function JobCard({
     return status.replace(/_/g, ' ').toLowerCase();
   };
 
-  const serviceName = (job as any).service_name || job.service_items?.name || 'Cleaning Job';
+  const serviceName = (job as any).service_name || job.service_items?.name || 'Home Service';
   const pay = (job as any).estimated_earnings !== undefined ? (job as any).estimated_earnings : job.total_amount;
   const address = (job as any).locality || job.address_line;
 
