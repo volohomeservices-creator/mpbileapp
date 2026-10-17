@@ -7,25 +7,6 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:608422758746:android:7745a78d13128cac498b63",
-        "android_client_info": {
-          "package_name": "com.volo.app"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyC7lRr_t9cXvXFx2IbNhJwQg2hRxbs9eQ8"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    },
-    {
-      "client_info": {
         "mobilesdk_app_id": "1:608422758746:android:b265c37c974a37b6498b63",
         "android_client_info": {
           "package_name": "com.volohome.app"
