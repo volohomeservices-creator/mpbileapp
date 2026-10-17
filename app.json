@@ -24,8 +24,20 @@
       },
       "predictiveBackGestureEnabled": false,
       "googleServicesFile": "./google-services.json",
-      "versionCode": 29870520
+      "versionCode": 29871150
     },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "@react-native-firebase/messaging",
+      "expo-status-bar",
+      "expo-location",
+      "expo-image-picker",
+      "expo-secure-store",
+      "expo-splash-screen"
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
     },

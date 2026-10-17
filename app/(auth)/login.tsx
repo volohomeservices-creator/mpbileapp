@@ -20,6 +20,7 @@ import { PhoneSchema } from '@volo/shared-types';
 import { preCheck, pinLogin } from '@/api/auth';
 import { useAuthStore } from '@/features/auth/authStore';
 import { Ionicons } from '@expo/vector-icons';
+import { normalizeIndianPhoneNumber } from '@/utils/phone';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -87,10 +88,9 @@ export default function LoginScreen() {
   const [pin, setPin] = useState('');
 
   const handleActionPress = async () => {
-    const digits = phone.replace(/\D/g, '');
-    const validation = PhoneSchema.safeParse(digits);
-    if (!validation.success) {
-      Alert.alert('Invalid Phone', validation.error.issues[0]?.message || 'Enter a valid 10-digit mobile number.');
+    const phoneCheck = normalizeIndianPhoneNumber(phone);
+    if (!phoneCheck.isValid) {
+      Alert.alert('Invalid Phone', phoneCheck.error || 'Enter a valid 10-digit mobile number.');
       return;
     }
 
@@ -103,7 +103,7 @@ export default function LoginScreen() {
           return;
         }
 
-        const data = await pinLogin(`+91${digits}`, pin);
+        const data = await pinLogin(phoneCheck.e164, pin);
         await setAuth(data.token, data.refreshToken, data.user);
 
         if (data.user.role === 'worker') {
@@ -113,7 +113,7 @@ export default function LoginScreen() {
         }
       } else {
         try {
-          const result = await preCheck(digits);
+          const result = await preCheck(phoneCheck.e164);
           if (result.authMethod === 'pin_required') {
             setShowPinInput(true);
             return;
@@ -124,7 +124,7 @@ export default function LoginScreen() {
 
         router.push({
           pathname: '/(auth)/otp-verify',
-          params: { phone: `+91${digits}`, role },
+          params: { phone: phoneCheck.e164, role },
         });
       }
     } catch (err: any) {
@@ -141,14 +141,14 @@ export default function LoginScreen() {
   };
 
   const handleForgotPin = () => {
-    const digits = phone.replace(/\D/g, '');
-    if (!digits || digits.length !== 10) {
-      showAlert('Phone Required', 'Please enter your 10-digit mobile number first.');
+    const phoneCheck = normalizeIndianPhoneNumber(phone);
+    if (!phoneCheck.isValid) {
+      showAlert('Phone Required', phoneCheck.error || 'Please enter your 10-digit mobile number first.');
       return;
     }
     router.push({
       pathname: '/(auth)/otp-verify',
-      params: { phone: `+91${digits}`, role, isForgotPin: 'true' },
+      params: { phone: phoneCheck.e164, role, isForgotPin: 'true' },
     });
   };
 

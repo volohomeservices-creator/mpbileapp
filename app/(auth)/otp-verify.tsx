@@ -19,27 +19,8 @@ import { OtpSchema } from '@volo/shared-types';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui/Button';
 
-// Dynamic loaders to prevent web crash
-const getNativeAuth = () => {
-  if (Platform.OS === 'web') return null;
-  try {
-    const authModule = require('@react-native-firebase/auth');
-    return authModule.default || authModule;
-  } catch (err) {
-    console.warn('[Firebase Auth] Failed to load native module:', err);
-    return null;
-  }
-};
-
-const getNativeMessaging = () => {
-  if (Platform.OS === 'web') return null;
-  try {
-    const msgModule = require('@react-native-firebase/messaging');
-    return msgModule.default || msgModule;
-  } catch (_) {
-    return null;
-  }
-};
+import { getNativeAuth, getNativeMessaging, isNativeFirebaseDefaultAppReady } from '@/lib/firebase-native-auth';
+import { normalizeIndianPhoneNumber } from '@/utils/phone';
 
 export default function OtpVerifyScreen() {
   const router = useRouter();
@@ -81,25 +62,22 @@ export default function OtpVerifyScreen() {
   };
 
   const sendOtp = async () => {
-    // 1. Guard against empty / undefined phone param
-    if (!phone || typeof phone !== 'string' || phone.trim().length === 0) {
-      Alert.alert('Phone Required', 'Phone number is missing. Please go back to login and enter your phone number.', [
+    // 1. Validate & normalize Indian phone number to E.164 (+91XXXXXXXXXX)
+    const phoneCheck = normalizeIndianPhoneNumber(phone);
+    if (!phoneCheck.isValid) {
+      Alert.alert('Phone Required', phoneCheck.error || 'Please enter a valid 10-digit mobile number.', [
         { text: 'Back to Login', onPress: () => router.back() }
       ]);
       setSending(false);
       return;
     }
 
-    const cleanDigits = phone.replace(/\D/g, '');
-    const formattedPhone = cleanDigits.length >= 10
-      ? `+91${cleanDigits.slice(-10)}`
-      : phone.trim();
-
+    const e164Phone = phoneCheck.e164;
     setSending(true);
     try {
       if (Platform.OS === 'web') {
         const { sendOtpWeb } = require('@/lib/firebase-web');
-        const result = await sendOtpWeb(formattedPhone);
+        const result = await sendOtpWeb(e164Phone);
         setConfirmation(result);
         startResendTimer();
         return;
@@ -114,25 +92,31 @@ export default function OtpVerifyScreen() {
       }
 
       const nativeAuth = getNativeAuth();
-      if (!nativeAuth) {
-        throw new Error('Native Firebase Auth module could not be loaded.');
-      }
-
-      const authInstance = typeof nativeAuth === 'function' ? nativeAuth() : nativeAuth;
-      const result = await authInstance.signInWithPhoneNumber(formattedPhone);
+      const result = await nativeAuth.signInWithPhoneNumber(e164Phone);
       setConfirmation(result);
       startResendTimer();
     } catch (err: any) {
-      console.error('[OTP Error Details]:', err);
-      const cleanMessage =
-        err?.userInfo?.message ||
-        err?.message ||
-        err?.code ||
-        'Failed to send OTP SMS. Please check your network and phone number.';
+      const errorCode = String(err?.code || err?.nativeErrorCode || '');
+      const rawMessage = String(err?.userInfo?.message || err?.nativeErrorMessage || err?.message || '');
+
+      let userFriendlyMessage = 'Failed to send OTP SMS. Please check your network and phone number.';
+
+      if (errorCode.includes('invalid-app-credential') || rawMessage.includes('invalid-app-credential')) {
+        userFriendlyMessage =
+          'App verification failed. Please ensure the app was installed from Google Play and has network access.';
+      } else if (errorCode.includes('quota-exceeded') || rawMessage.includes('quota')) {
+        userFriendlyMessage = 'SMS quota exceeded for today. Please try again later or use PIN login.';
+      } else if (errorCode.includes('too-many-requests') || rawMessage.includes('too-many-requests')) {
+        userFriendlyMessage = 'Too many requests. Please wait a few minutes before trying again.';
+      } else if (errorCode.includes('network-request-failed')) {
+        userFriendlyMessage = 'Network connection failed. Please check your internet connection.';
+      } else if (rawMessage && !rawMessage.toLowerCase().includes('undefined')) {
+        userFriendlyMessage = rawMessage;
+      }
 
       Alert.alert(
         'OTP Error',
-        cleanMessage,
+        userFriendlyMessage,
         [
           { text: 'Try Again', onPress: () => sendOtp() },
           { text: 'Back to Login', onPress: () => router.back(), style: 'cancel' }
@@ -193,7 +177,7 @@ export default function OtpVerifyScreen() {
       try {
         const nativeMessaging = getNativeMessaging();
         if (nativeMessaging) {
-          const fcmToken = await nativeMessaging().getToken();
+          const fcmToken = await nativeMessaging.getToken();
           if (fcmToken) {
             await registerDeviceToken(fcmToken, Platform.OS as 'android' | 'ios');
           }
