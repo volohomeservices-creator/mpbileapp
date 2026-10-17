@@ -7,7 +7,8 @@
     "start": "node node_modules/expo/bin/cli start",
     "android": "node node_modules/expo/bin/cli run:android",
     "ios": "node node_modules/expo/bin/cli run:ios",
-    "web": "node node_modules/expo/bin/cli start --web"
+    "web": "node node_modules/expo/bin/cli start --web",
+    "postinstall": "node scripts/patch-firebase.js"
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.3",

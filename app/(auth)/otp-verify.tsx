@@ -22,14 +22,23 @@ import { Button } from '@/components/ui/Button';
 // Dynamic loaders to prevent web crash
 const getNativeAuth = () => {
   if (Platform.OS === 'web') return null;
-  const moduleName = '@react-native-firebase/auth';
-  return require(moduleName).default;
+  try {
+    const authModule = require('@react-native-firebase/auth');
+    return authModule.default || authModule;
+  } catch (err) {
+    console.warn('[Firebase Auth] Failed to load native module:', err);
+    return null;
+  }
 };
 
 const getNativeMessaging = () => {
   if (Platform.OS === 'web') return null;
-  const moduleName = '@react-native-firebase/messaging';
-  return require(moduleName).default;
+  try {
+    const msgModule = require('@react-native-firebase/messaging');
+    return msgModule.default || msgModule;
+  } catch (_) {
+    return null;
+  }
 };
 
 export default function OtpVerifyScreen() {
@@ -72,11 +81,25 @@ export default function OtpVerifyScreen() {
   };
 
   const sendOtp = async () => {
+    // 1. Guard against empty / undefined phone param
+    if (!phone || typeof phone !== 'string' || phone.trim().length === 0) {
+      Alert.alert('Phone Required', 'Phone number is missing. Please go back to login and enter your phone number.', [
+        { text: 'Back to Login', onPress: () => router.back() }
+      ]);
+      setSending(false);
+      return;
+    }
+
+    const cleanDigits = phone.replace(/\D/g, '');
+    const formattedPhone = cleanDigits.length >= 10
+      ? `+91${cleanDigits.slice(-10)}`
+      : phone.trim();
+
     setSending(true);
     try {
       if (Platform.OS === 'web') {
         const { sendOtpWeb } = require('@/lib/firebase-web');
-        const result = await sendOtpWeb(phone);
+        const result = await sendOtpWeb(formattedPhone);
         setConfirmation(result);
         startResendTimer();
         return;
@@ -90,37 +113,31 @@ export default function OtpVerifyScreen() {
         );
       }
 
-      try {
-        const firebaseApp = require('@react-native-firebase/app').default;
-        const apps = firebaseApp.apps || [];
-        const hasDefault = apps.some((a: any) => a.name === '[DEFAULT]' || a.name === 'DEFAULT');
-
-        if (!hasDefault) {
-          await firebaseApp.initializeApp({
-            apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyC7lRr_t9cXvXFx2IbNhJwQg2hRxbs9eQ8',
-            appId: Platform.OS === 'android'
-              ? '1:608422758746:android:b265c37c974a37b6498b63'
-              : (process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '1:608422758746:web:4596be66d801cae9498b63'),
-            projectId: 'volohome-16448',
-            databaseURL: 'https://volohome-16448-default-rtdb.firebaseio.com',
-            storageBucket: 'volohome-16448.firebasestorage.app',
-            messagingSenderId: '608422758746',
-          });
-        }
-      } catch (initErr) {
-        console.warn('[Firebase] initializeApp fallback note:', initErr);
-      }
-
       const nativeAuth = getNativeAuth();
       if (!nativeAuth) {
         throw new Error('Native Firebase Auth module could not be loaded.');
       }
-      const result = await nativeAuth().signInWithPhoneNumber(phone);
+
+      const authInstance = typeof nativeAuth === 'function' ? nativeAuth() : nativeAuth;
+      const result = await authInstance.signInWithPhoneNumber(formattedPhone);
       setConfirmation(result);
       startResendTimer();
     } catch (err: any) {
-      Alert.alert('OTP Error', err.message ?? 'Failed to send OTP. Check phone number.');
-      router.back();
+      console.error('[OTP Error Details]:', err);
+      const cleanMessage =
+        err?.userInfo?.message ||
+        err?.message ||
+        err?.code ||
+        'Failed to send OTP SMS. Please check your network and phone number.';
+
+      Alert.alert(
+        'OTP Error',
+        cleanMessage,
+        [
+          { text: 'Try Again', onPress: () => sendOtp() },
+          { text: 'Back to Login', onPress: () => router.back(), style: 'cancel' }
+        ]
+      );
     } finally {
       setSending(false);
     }

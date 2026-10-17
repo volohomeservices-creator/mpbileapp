@@ -24,7 +24,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "googleServicesFile": "./google-services.json",
-      "versionCode": 29870300
+      "versionCode": 29870520
     },
     "web": {
       "favicon": "./assets/favicon.png"
