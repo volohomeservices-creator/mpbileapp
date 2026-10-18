@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Platform, NativeModules } from 'react-native';
 import firebase from '@react-native-firebase/app';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import messaging, { FirebaseMessagingTypes } from '@react-native-firebase/messaging';
@@ -105,3 +105,66 @@ export function getNativeMessaging(): FirebaseMessagingTypes.Module | null {
     return null;
   }
 }
+
+/**
+ * Safely requests an SMS OTP from native Firebase Auth.
+ * 
+ * Invokes native Android authentication with defensive error unmasking to ensure
+ * Hermes engine never crashes on undefined userInfo.code.
+ */
+export async function sendNativePhoneOtp(
+  phoneNumber: string,
+  forceResend = false
+): Promise<FirebaseAuthTypes.ConfirmationResult> {
+  const nativeAuth = await getNativeAuth();
+  const appName = (nativeAuth.app && nativeAuth.app.name) || '[DEFAULT]';
+
+  // 1. On Android, call NativeModules.RNFBAuthModule directly to bypass any potential JS bridge wrapper crashes
+  if (Platform.OS === 'android' && NativeModules.RNFBAuthModule?.signInWithPhoneNumber) {
+    try {
+      const result: { verificationId?: string } = await NativeModules.RNFBAuthModule.signInWithPhoneNumber(
+        appName,
+        phoneNumber,
+        forceResend
+      );
+
+      const verificationId = result?.verificationId;
+      if (!verificationId) {
+        throw new Error('No verification ID was returned by Firebase Phone Auth.');
+      }
+
+      // Return a complete ConfirmationResult-compatible object
+      return {
+        verificationId,
+        confirm: async (verificationCode: string) => {
+          const userCredential = await (nativeAuth as any).native.confirmationResultConfirm(verificationCode);
+          return (nativeAuth as any)._setUserCredential(userCredential);
+        },
+      } as unknown as FirebaseAuthTypes.ConfirmationResult;
+    } catch (nativeErr: any) {
+      // Cleanly unmask the native code and message so Hermes never crashes on undefined userInfo
+      const rawCode = String(nativeErr?.code || nativeErr?.userInfo?.code || '');
+      const rawMessage = String(nativeErr?.message || nativeErr?.userInfo?.message || 'Phone verification failed');
+      
+      const cleanError = new Error(rawMessage);
+      (cleanError as any).code = rawCode.startsWith('auth/') ? rawCode : (rawCode ? `auth/${rawCode}` : 'auth/unknown');
+      (cleanError as any).nativeErrorCode = rawCode;
+      (cleanError as any).nativeErrorMessage = rawMessage;
+      throw cleanError;
+    }
+  }
+
+  // 2. Standard fallback (iOS, etc.)
+  try {
+    return await nativeAuth.signInWithPhoneNumber(phoneNumber, forceResend);
+  } catch (err: any) {
+    const rawMessage = String(err?.userInfo?.message || err?.nativeErrorMessage || err?.message || '');
+    if (rawMessage.includes('Cannot convert undefined value to object')) {
+      const cleanError = new Error('App verification failed. Please check Google Play Integrity and Firebase SMS region settings.');
+      (cleanError as any).code = 'auth/app-not-authorized';
+      throw cleanError;
+    }
+    throw err;
+  }
+}
+

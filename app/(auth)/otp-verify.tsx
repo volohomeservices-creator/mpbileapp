@@ -19,7 +19,12 @@ import { OtpSchema } from '@volo/shared-types';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui/Button';
 
-import { getNativeAuth, getNativeMessaging, isNativeFirebaseDefaultAppReady } from '@/lib/firebase-native-auth';
+import {
+  getNativeAuth,
+  getNativeMessaging,
+  isNativeFirebaseDefaultAppReady,
+  sendNativePhoneOtp,
+} from '@/lib/firebase-native-auth';
 import { normalizeIndianPhoneNumber } from '@/utils/phone';
 
 export default function OtpVerifyScreen() {
@@ -91,8 +96,7 @@ export default function OtpVerifyScreen() {
         );
       }
 
-      const nativeAuth = await getNativeAuth();
-      const result = await nativeAuth.signInWithPhoneNumber(e164Phone);
+      const result = await sendNativePhoneOtp(e164Phone);
       setConfirmation(result);
       startResendTimer();
     } catch (err: any) {
