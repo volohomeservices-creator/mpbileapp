@@ -1,6 +1,7 @@
 {
   "expo": {
     "name": "volo-mobile",
+    "owner": "volohomes-team",
     "slug": "volo-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -24,7 +25,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "googleServicesFile": "./google-services.json",
-      "versionCode": 29871200
+      "versionCode": 29871842
     },
     "plugins": [
       "expo-router",
