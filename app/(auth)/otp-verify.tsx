@@ -101,18 +101,29 @@ export default function OtpVerifyScreen() {
 
       let userFriendlyMessage = 'Failed to send OTP SMS. Please check your network and phone number.';
 
-      if (errorCode.includes('invalid-app-credential') || rawMessage.includes('invalid-app-credential')) {
+      if (
+        errorCode.includes('invalid-app-credential') ||
+        errorCode.includes('app-not-authorized') ||
+        rawMessage.includes('invalid-app-credential') ||
+        rawMessage.includes('app-not-authorized')
+      ) {
         userFriendlyMessage =
-          'App verification failed. Please ensure the app was installed from Google Play and has network access.';
+          'App verification failed (Play Integrity/SHA fingerprint not recognized). Please verify that the build SHA fingerprint is registered in Firebase Console.';
       } else if (errorCode.includes('quota-exceeded') || rawMessage.includes('quota')) {
         userFriendlyMessage = 'SMS quota exceeded for today. Please try again later or use PIN login.';
       } else if (errorCode.includes('too-many-requests') || rawMessage.includes('too-many-requests')) {
         userFriendlyMessage = 'Too many requests. Please wait a few minutes before trying again.';
       } else if (errorCode.includes('network-request-failed')) {
         userFriendlyMessage = 'Network connection failed. Please check your internet connection.';
+      } else if (errorCode.includes('invalid-phone-number')) {
+        userFriendlyMessage = 'The phone number format is invalid. Please check your 10-digit mobile number.';
       } else if (rawMessage && !rawMessage.toLowerCase().includes('undefined')) {
-        userFriendlyMessage = rawMessage;
+        userFriendlyMessage = errorCode ? `[${errorCode}] ${rawMessage}` : rawMessage;
+      } else if (errorCode) {
+        userFriendlyMessage = `Failed to send OTP SMS [${errorCode}].`;
       }
+
+      console.warn(`[OTP] Send failed for ${phoneCheck.masked}: ${errorCode} - ${rawMessage}`);
 
       Alert.alert(
         'OTP Error',
