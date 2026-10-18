@@ -24,7 +24,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "googleServicesFile": "./google-services.json",
-      "versionCode": 29871150
+      "versionCode": 29871200
     },
     "plugins": [
       "expo-router",

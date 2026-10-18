@@ -4,7 +4,7 @@
  * crashing the Metro bundler or Webpack on web.
  */
 
-export function getNativeAuth(): any {
+export async function getNativeAuth(): Promise<any> {
   return null;
 }
 
@@ -14,4 +14,8 @@ export function getNativeMessaging(): null {
 
 export function isNativeFirebaseDefaultAppReady(): boolean {
   return false;
+}
+
+export async function ensureNativeFirebaseApp(): Promise<void> {
+  return;
 }

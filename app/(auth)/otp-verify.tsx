@@ -91,7 +91,7 @@ export default function OtpVerifyScreen() {
         );
       }
 
-      const nativeAuth = getNativeAuth();
+      const nativeAuth = await getNativeAuth();
       const result = await nativeAuth.signInWithPhoneNumber(e164Phone);
       setConfirmation(result);
       startResendTimer();
