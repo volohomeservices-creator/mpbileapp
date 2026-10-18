@@ -117,7 +117,7 @@ export default function OtpVerifyScreen() {
         userFriendlyMessage = 'Network connection failed. Please check your internet connection.';
       } else if (errorCode.includes('invalid-phone-number')) {
         userFriendlyMessage = 'The phone number format is invalid. Please check your 10-digit mobile number.';
-      } else if (rawMessage && !rawMessage.toLowerCase().includes('undefined')) {
+      } else if (rawMessage) {
         userFriendlyMessage = errorCode ? `[${errorCode}] ${rawMessage}` : rawMessage;
       } else if (errorCode) {
         userFriendlyMessage = `Failed to send OTP SMS [${errorCode}].`;

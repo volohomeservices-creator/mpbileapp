@@ -12,7 +12,24 @@
           "package_name": "com.volohome.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "608422758746-9mthras3lnmfi32tqfirj9756ij2aguq.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.volohome.app",
+            "certificate_hash": "6ab337106608cdc11ace61089ec35654a0489dc5"
+          }
+        },
+        {
+          "client_id": "608422758746-gagmhocqv234lbajj6ot5cpdk2epl5r6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.volohome.app",
+            "certificate_hash": "38a1426132ccf75846d07c0f5ffcc737ce213b2f"
+          }
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyC7lRr_t9cXvXFx2IbNhJwQg2hRxbs9eQ8"
