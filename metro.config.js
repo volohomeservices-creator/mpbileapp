@@ -3,12 +3,15 @@ const http = require("http");
 const { getDefaultConfig } = require("expo/metro-config");
 const { withNativeWind } = require("nativewind/metro");
 
-// Path to the shared-types package (sibling of mobile app)
-const sharedTypesPath = path.resolve(__dirname, "../../packages/shared-types");
+const fs = require("fs");
+// Path to the shared-types package (local inside standalone repo, or monorepo fallback)
+const localSharedPath = path.resolve(__dirname, "packages/shared-types");
+const monorepoSharedPath = path.resolve(__dirname, "../../packages/shared-types");
+const sharedTypesPath = fs.existsSync(localSharedPath) ? localSharedPath : monorepoSharedPath;
 
 const config = getDefaultConfig(__dirname);
 
-// Tell Metro to watch the shared-types folder even though it's outside the project root
+// Tell Metro to watch the shared-types folder
 config.watchFolders = [sharedTypesPath];
 
 config.resolver.extraNodeModules = {

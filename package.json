@@ -21,7 +21,7 @@
     "@react-navigation/native": "^7.1.17",
     "@shopify/flash-list": "^2.3.2",
     "@tanstack/react-query": "^5.101.0",
-    "@volo/shared-types": "file:../../packages/shared-types",
+    "@volo/shared-types": "file:./packages/shared-types",
     "axios": "^1.18.1",
     "expo": "~57.0.2",
     "expo-constants": "~57.0.0",
