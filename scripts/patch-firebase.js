@@ -1,8 +1,9 @@
 /**
  * Comprehensive compatibility patch for @react-native-firebase under React Native New Architecture (TurboModules).
  * 
- * Fixes Hermes engine crash "TypeError: Cannot convert undefined value to object" by:
- * 1. Safely exposing getConstants() in registry/nativeModule.js for TurboModule interop.
+ * Fixes Hermes engine crashes by:
+ * 1. Safely exposing getConstants() AND using a Proxy fallback in nativeModule.js
+ *    so that TurboModule methods not visible to Object.keys() are still accessible.
  * 2. Defensively guarding APP_LANGUAGE and APP_USER in auth/lib/index.js constructor.
  * 3. Preserving bulletproof NativeFirebaseError.js against unmasked rejection payloads.
  * 
@@ -16,6 +17,12 @@ let patchCount = 0;
 let skipCount = 0;
 
 // ─── 1. Patch @react-native-firebase/app/lib/internal/registry/nativeModule.js ───
+// This is the CRITICAL patch: under RN 0.86 New Arch + TurboModule interop,
+// Object.keys(NativeModule) does NOT enumerate native methods (addAuthStateListener,
+// signInWithPhoneNumber, etc.). We fix this by:
+//   a) Extracting getConstants() and merging them onto the wrapper object.
+//   b) Returning a Proxy that falls back to the original NativeModule for any
+//      property not found on the wrapper — dynamically wrapping methods on access.
 const nativeModulePath = path.resolve(
   __dirname,
   '../node_modules/@react-native-firebase/app/lib/internal/registry/nativeModule.js'
@@ -25,20 +32,58 @@ if (!fs.existsSync(nativeModulePath)) {
   console.log('[patch-firebase] registry/nativeModule.js not found, skipping.');
 } else {
   const content = fs.readFileSync(nativeModulePath, 'utf8');
-  const alreadyPatchedMarker = 'NativeModule.getConstants === \'function\'';
+  const proxyPatchMarker = '// [RNFB-PATCH] Proxy fallback for TurboModule interop';
 
-  if (content.includes(alreadyPatchedMarker)) {
-    console.log('[patch-firebase] registry/nativeModule.js is already fully patched.');
+  if (content.includes(proxyPatchMarker)) {
+    console.log('[patch-firebase] registry/nativeModule.js is already fully patched (Proxy).');
     skipCount++;
   } else {
-    const targetPattern = '  const properties = Object.keys(NativeModule);';
-    if (!content.includes(targetPattern)) {
+    // We need to replace the entire nativeModuleWrapped function body.
+    // Match the function from its declaration to the closing brace + the next function/comment.
+    const funcStart = 'function nativeModuleWrapped(namespace, NativeModule, argToPrepend) {';
+    const funcEndMarker = '\n}\n';
+
+    const startIndex = content.indexOf(funcStart);
+    if (startIndex === -1) {
       throw new Error(
-        `[patch-firebase] CRITICAL: Target pattern not found in ${nativeModulePath}. Expected: "${targetPattern}"`
+        `[patch-firebase] CRITICAL: Cannot find nativeModuleWrapped function in ${nativeModulePath}.`
       );
     }
 
-    const replacement = `  if (typeof NativeModule.getConstants === 'function') {
+    // Find the closing brace of the function.
+    // We know the function body structure: after the opening '{', find the matching '}'
+    // by looking for the pattern "\n}\n" that ends the function.
+    const bodyStart = startIndex + funcStart.length;
+    let braceDepth = 1;
+    let funcEndIndex = -1;
+    for (let i = bodyStart; i < content.length; i++) {
+      if (content[i] === '{') braceDepth++;
+      if (content[i] === '}') {
+        braceDepth--;
+        if (braceDepth === 0) {
+          funcEndIndex = i + 1; // include the closing '}'
+          break;
+        }
+      }
+    }
+
+    if (funcEndIndex === -1) {
+      throw new Error(
+        `[patch-firebase] CRITICAL: Cannot find end of nativeModuleWrapped function in ${nativeModulePath}.`
+      );
+    }
+
+    const replacement = `function nativeModuleWrapped(namespace, NativeModule, argToPrepend) {
+  // [RNFB-PATCH] Proxy fallback for TurboModule interop
+  // Under RN 0.86 New Architecture, Object.keys(NativeModule) may NOT enumerate
+  // TurboModule methods. We use a Proxy to dynamically wrap any accessed method.
+  const native = {};
+  if (!NativeModule) {
+    return NativeModule;
+  }
+
+  // Step 1: Extract constants via getConstants() for TurboModule interop
+  if (typeof NativeModule.getConstants === 'function') {
     try {
       const constants = NativeModule.getConstants();
       if (constants && typeof constants === 'object') {
@@ -49,11 +94,60 @@ if (!fs.existsSync(nativeModulePath)) {
     }
   }
 
-  const properties = Object.keys(NativeModule);`;
+  // Step 2: Copy enumerable properties (works for old arch bridge modules)
+  const properties = Object.keys(NativeModule);
+  for (let i = 0, len = properties.length; i < len; i++) {
+    const property = properties[i];
+    if (typeof NativeModule[property] === 'function') {
+      native[property] = nativeModuleMethodWrapped(namespace, NativeModule[property], argToPrepend);
+    } else {
+      native[property] = NativeModule[property];
+    }
+  }
 
-    const patchedContent = content.replace(targetPattern, replacement);
+  // Step 3: Proxy fallback for non-enumerable TurboModule methods
+  // If a property is accessed that doesn't exist on 'native', check the original
+  // NativeModule. If it's a function, wrap it and cache it for future access.
+  if (typeof Proxy !== 'undefined') {
+    return new Proxy(native, {
+      get(target, prop, receiver) {
+        if (prop in target) {
+          return target[prop];
+        }
+        // Fallback: check the original NativeModule
+        try {
+          const nativeVal = NativeModule[prop];
+          if (typeof nativeVal === 'function') {
+            // Wrap and cache for subsequent calls
+            target[prop] = nativeModuleMethodWrapped(namespace, nativeVal, argToPrepend);
+            return target[prop];
+          }
+          return nativeVal;
+        } catch (e) {
+          return undefined;
+        }
+      },
+      has(target, prop) {
+        if (prop in target) return true;
+        try {
+          return prop in NativeModule || NativeModule[prop] !== undefined;
+        } catch (e) {
+          return false;
+        }
+      },
+      ownKeys(target) {
+        return Reflect.ownKeys(target);
+      }
+    });
+  }
+
+  // Fallback if Proxy isn't available (shouldn't happen on modern Hermes)
+  return native;
+}`;
+
+    const patchedContent = content.substring(0, startIndex) + replacement + content.substring(funcEndIndex);
     fs.writeFileSync(nativeModulePath, patchedContent, 'utf8');
-    console.log('[patch-firebase] Successfully patched registry/nativeModule.js with getConstants support.');
+    console.log('[patch-firebase] Successfully patched registry/nativeModule.js with Proxy fallback for TurboModule interop.');
     patchCount++;
   }
 }
