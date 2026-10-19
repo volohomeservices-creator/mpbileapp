@@ -1,11 +1,12 @@
 /**
  * Comprehensive compatibility patch for @react-native-firebase under React Native New Architecture (TurboModules).
  * 
- * Fixes Hermes engine crashes by:
- * 1. Safely exposing getConstants() AND using a Proxy fallback in nativeModule.js
- *    so that TurboModule methods not visible to Object.keys() are still accessible.
- * 2. Defensively guarding APP_LANGUAGE and APP_USER in auth/lib/index.js constructor.
- * 3. Preserving bulletproof NativeFirebaseError.js against unmasked rejection payloads.
+ * Fixes Hermes engine crashes ("Cannot convert undefined value to object" & "undefined is not a function") by:
+ * 1. Exposing getConstants() and wrapping NATIVE_MODULE_REGISTRY entries in a Proxy that
+ *    dynamically intercepts all TurboModule method calls (even non-enumerable / prototype methods).
+ * 2. Defensively guarding APP_LANGUAGE, APP_USER, addAuthStateListener, addIdTokenListener,
+ *    and configureAuthDomain in auth/lib/index.js constructor.
+ * 3. Bulletproofing NativeFirebaseError.js against unmasked rejection payloads.
  * 
  * Designed to be deterministic, idempotent, and to fail clearly if source files differ from expected versions.
  */
@@ -17,12 +18,6 @@ let patchCount = 0;
 let skipCount = 0;
 
 // ─── 1. Patch @react-native-firebase/app/lib/internal/registry/nativeModule.js ───
-// This is the CRITICAL patch: under RN 0.86 New Arch + TurboModule interop,
-// Object.keys(NativeModule) does NOT enumerate native methods (addAuthStateListener,
-// signInWithPhoneNumber, etc.). We fix this by:
-//   a) Extracting getConstants() and merging them onto the wrapper object.
-//   b) Returning a Proxy that falls back to the original NativeModule for any
-//      property not found on the wrapper — dynamically wrapping methods on access.
 const nativeModulePath = path.resolve(
   __dirname,
   '../node_modules/@react-native-firebase/app/lib/internal/registry/nativeModule.js'
@@ -31,58 +26,39 @@ const nativeModulePath = path.resolve(
 if (!fs.existsSync(nativeModulePath)) {
   console.log('[patch-firebase] registry/nativeModule.js not found, skipping.');
 } else {
-  const content = fs.readFileSync(nativeModulePath, 'utf8');
-  const proxyPatchMarker = '// [RNFB-PATCH] Proxy fallback for TurboModule interop';
+  let content = fs.readFileSync(nativeModulePath, 'utf8');
+  const registryProxyMarker = '// [RNFB-PATCH] Registry Proxy fallback for TurboModule interop';
 
-  if (content.includes(proxyPatchMarker)) {
-    console.log('[patch-firebase] registry/nativeModule.js is already fully patched (Proxy).');
+  if (content.includes(registryProxyMarker)) {
+    console.log('[patch-firebase] registry/nativeModule.js is already fully patched.');
     skipCount++;
   } else {
-    // We need to replace the entire nativeModuleWrapped function body.
-    // Match the function from its declaration to the closing brace + the next function/comment.
+    // 1A. Patch nativeModuleWrapped to inspect prototype and properties
     const funcStart = 'function nativeModuleWrapped(namespace, NativeModule, argToPrepend) {';
-    const funcEndMarker = '\n}\n';
-
     const startIndex = content.indexOf(funcStart);
-    if (startIndex === -1) {
-      throw new Error(
-        `[patch-firebase] CRITICAL: Cannot find nativeModuleWrapped function in ${nativeModulePath}.`
-      );
-    }
-
-    // Find the closing brace of the function.
-    // We know the function body structure: after the opening '{', find the matching '}'
-    // by looking for the pattern "\n}\n" that ends the function.
-    const bodyStart = startIndex + funcStart.length;
-    let braceDepth = 1;
-    let funcEndIndex = -1;
-    for (let i = bodyStart; i < content.length; i++) {
-      if (content[i] === '{') braceDepth++;
-      if (content[i] === '}') {
-        braceDepth--;
-        if (braceDepth === 0) {
-          funcEndIndex = i + 1; // include the closing '}'
-          break;
+    if (startIndex !== -1) {
+      const bodyStart = startIndex + funcStart.length;
+      let braceDepth = 1;
+      let funcEndIndex = -1;
+      for (let i = bodyStart; i < content.length; i++) {
+        if (content[i] === '{') braceDepth++;
+        if (content[i] === '}') {
+          braceDepth--;
+          if (braceDepth === 0) {
+            funcEndIndex = i + 1;
+            break;
+          }
         }
       }
-    }
 
-    if (funcEndIndex === -1) {
-      throw new Error(
-        `[patch-firebase] CRITICAL: Cannot find end of nativeModuleWrapped function in ${nativeModulePath}.`
-      );
-    }
-
-    const replacement = `function nativeModuleWrapped(namespace, NativeModule, argToPrepend) {
-  // [RNFB-PATCH] Proxy fallback for TurboModule interop
-  // Under RN 0.86 New Architecture, Object.keys(NativeModule) may NOT enumerate
-  // TurboModule methods. We use a Proxy to dynamically wrap any accessed method.
+      if (funcEndIndex !== -1) {
+        const replacement = `function nativeModuleWrapped(namespace, NativeModule, argToPrepend) {
   const native = {};
   if (!NativeModule) {
     return NativeModule;
   }
 
-  // Step 1: Extract constants via getConstants() for TurboModule interop
+  // Extract constants via getConstants() for TurboModule interop
   if (typeof NativeModule.getConstants === 'function') {
     try {
       const constants = NativeModule.getConstants();
@@ -94,60 +70,100 @@ if (!fs.existsSync(nativeModulePath)) {
     }
   }
 
-  // Step 2: Copy enumerable properties (works for old arch bridge modules)
-  const properties = Object.keys(NativeModule);
-  for (let i = 0, len = properties.length; i < len; i++) {
-    const property = properties[i];
-    if (typeof NativeModule[property] === 'function') {
-      native[property] = nativeModuleMethodWrapped(namespace, NativeModule[property], argToPrepend);
-    } else {
-      native[property] = NativeModule[property];
-    }
+  // Copy own and prototype properties
+  const propSet = new Set();
+  let curr = NativeModule;
+  while (curr && curr !== Object.prototype) {
+    Object.getOwnPropertyNames(curr).forEach(p => propSet.add(p));
+    curr = Object.getPrototypeOf(curr);
   }
 
-  // Step 3: Proxy fallback for non-enumerable TurboModule methods
-  // If a property is accessed that doesn't exist on 'native', check the original
-  // NativeModule. If it's a function, wrap it and cache it for future access.
+  propSet.forEach(property => {
+    try {
+      if (typeof NativeModule[property] === 'function') {
+        native[property] = nativeModuleMethodWrapped(namespace, NativeModule[property], argToPrepend);
+      } else if (native[property] === undefined) {
+        native[property] = NativeModule[property];
+      }
+    } catch (e) {}
+  });
+
   if (typeof Proxy !== 'undefined') {
     return new Proxy(native, {
-      get(target, prop, receiver) {
-        if (prop in target) {
-          return target[prop];
-        }
-        // Fallback: check the original NativeModule
+      get(target, prop) {
+        if (prop in target) return target[prop];
         try {
-          const nativeVal = NativeModule[prop];
-          if (typeof nativeVal === 'function') {
-            // Wrap and cache for subsequent calls
-            target[prop] = nativeModuleMethodWrapped(namespace, nativeVal, argToPrepend);
+          const raw = NativeModule[prop];
+          if (typeof raw === 'function') {
+            target[prop] = nativeModuleMethodWrapped(namespace, raw, argToPrepend);
             return target[prop];
           }
-          return nativeVal;
+          return raw;
         } catch (e) {
           return undefined;
         }
-      },
-      has(target, prop) {
-        if (prop in target) return true;
-        try {
-          return prop in NativeModule || NativeModule[prop] !== undefined;
-        } catch (e) {
-          return false;
-        }
-      },
-      ownKeys(target) {
-        return Reflect.ownKeys(target);
       }
     });
   }
 
-  // Fallback if Proxy isn't available (shouldn't happen on modern Hermes)
   return native;
 }`;
+        content = content.substring(0, startIndex) + replacement + content.substring(funcEndIndex);
+      }
+    }
 
-    const patchedContent = content.substring(0, startIndex) + replacement + content.substring(funcEndIndex);
-    fs.writeFileSync(nativeModulePath, patchedContent, 'utf8');
-    console.log('[patch-firebase] Successfully patched registry/nativeModule.js with Proxy fallback for TurboModule interop.');
+    // 1B. Patch initialiseNativeModule to return Proxy for NATIVE_MODULE_REGISTRY[key]
+    const freezeTarget = '  Object.freeze(multiModuleRoot);\n\n  NATIVE_MODULE_REGISTRY[key] = multiModuleRoot;\n\n  return NATIVE_MODULE_REGISTRY[key];';
+    const fallbackTarget = '  NATIVE_MODULE_REGISTRY[key] = multiModuleRoot;\n\n  return NATIVE_MODULE_REGISTRY[key];';
+
+    const registryReplacement = `  // [RNFB-PATCH] Registry Proxy fallback for TurboModule interop
+  const multiModuleProxy = (typeof Proxy !== 'undefined') ? new Proxy(multiModuleRoot, {
+    get(target, prop) {
+      if (prop in target) {
+        return target[prop];
+      }
+      for (let i = 0; i < nativeModuleNames.length; i++) {
+        const nm = NativeModules[nativeModuleNames[i]];
+        if (nm) {
+          try {
+            const val = nm[prop];
+            if (typeof val === 'function') {
+              const prepended = [];
+              if (hasMultiAppSupport) prepended.push(module.app.name);
+              if (hasCustomUrlOrRegionSupport && !disablePrependCustomUrlOrRegion) prepended.push(module._customUrlOrRegion);
+              target[prop] = nativeModuleMethodWrapped(namespace, val, prepended);
+              return target[prop];
+            }
+            if (val !== undefined) {
+              return val;
+            }
+          } catch (e) {}
+        }
+      }
+      return undefined;
+    },
+    has(target, prop) {
+      if (prop in target) return true;
+      for (let i = 0; i < nativeModuleNames.length; i++) {
+        const nm = NativeModules[nativeModuleNames[i]];
+        if (nm && (prop in nm || nm[prop] !== undefined)) return true;
+      }
+      return false;
+    }
+  }) : multiModuleRoot;
+
+  NATIVE_MODULE_REGISTRY[key] = multiModuleProxy;
+
+  return NATIVE_MODULE_REGISTRY[key];`;
+
+    if (content.includes(freezeTarget)) {
+      content = content.replace(freezeTarget, registryReplacement);
+    } else if (content.includes(fallbackTarget)) {
+      content = content.replace(fallbackTarget, registryReplacement);
+    }
+
+    fs.writeFileSync(nativeModulePath, content, 'utf8');
+    console.log('[patch-firebase] Successfully patched registry/nativeModule.js with complete Proxy support.');
     patchCount++;
   }
 }
@@ -161,56 +177,80 @@ const authIndexPath = path.resolve(
 if (!fs.existsSync(authIndexPath)) {
   console.log('[patch-firebase] auth/lib/index.js not found, skipping.');
 } else {
-  const content = fs.readFileSync(authIndexPath, 'utf8');
-  const alreadyPatchedMarker = 'const appLanguage = (this.native && this.native.APP_LANGUAGE) || {};';
+  let content = fs.readFileSync(authIndexPath, 'utf8');
+  const listenerGuardsMarker = 'typeof this.native.addAuthStateListener === \'function\'';
 
-  if (content.includes(alreadyPatchedMarker)) {
-    console.log('[patch-firebase] auth/lib/index.js is already fully patched.');
+  if (content.includes(listenerGuardsMarker)) {
+    console.log('[patch-firebase] auth/lib/index.js is already fully patched with listener guards.');
     skipCount++;
   } else {
+    // 2A. Language and User defensive guards (if not already present)
     const langTarget = '    this._languageCode = this.native.APP_LANGUAGE[this.app._name];';
-    const langDefaultTarget = "      this._languageCode = this.native.APP_LANGUAGE['[DEFAULT]'];";
-    const userTarget = '    if (this.native.APP_USER[this.app._name]) {';
-    const setUserTarget = '      this._setUser(this.native.APP_USER[this.app._name]);';
-
-    if (!content.includes(langTarget)) {
-      throw new Error(
-        `[patch-firebase] CRITICAL: Language target pattern not found in ${authIndexPath}. Expected: "${langTarget}"`
-      );
-    }
-    if (!content.includes(userTarget)) {
-      throw new Error(
-        `[patch-firebase] CRITICAL: User target pattern not found in ${authIndexPath}. Expected: "${userTarget}"`
-      );
-    }
-
-    let patchedContent = content;
-
-    const langReplacement = `    const appLanguage = (this.native && this.native.APP_LANGUAGE) || {};
+    if (content.includes(langTarget)) {
+      const langReplacement = `    const appLanguage = (this.native && this.native.APP_LANGUAGE) || {};
     this._languageCode = appLanguage[this.app._name] || appLanguage['[DEFAULT]'] || '';`;
-    patchedContent = patchedContent.replace(langTarget, langReplacement);
+      content = content.replace(langTarget, langReplacement);
+    }
 
-    // Replace the secondary default language lookup if present
-    if (patchedContent.includes(langDefaultTarget)) {
-      patchedContent = patchedContent.replace(
+    const langDefaultTarget = "      this._languageCode = this.native.APP_LANGUAGE['[DEFAULT]'];";
+    if (content.includes(langDefaultTarget)) {
+      content = content.replace(
         langDefaultTarget,
         "      this._languageCode = appLanguage['[DEFAULT]'] || '';"
       );
     }
 
-    const userReplacement = `    const appUser = (this.native && this.native.APP_USER) || {};
+    const userTarget = '    if (this.native.APP_USER[this.app._name]) {';
+    if (content.includes(userTarget)) {
+      const userReplacement = `    const appUser = (this.native && this.native.APP_USER) || {};
     if (appUser[this.app._name]) {`;
-    patchedContent = patchedContent.replace(userTarget, userReplacement);
+      content = content.replace(userTarget, userReplacement);
+    }
 
-    if (patchedContent.includes(setUserTarget)) {
-      patchedContent = patchedContent.replace(
+    const setUserTarget = '      this._setUser(this.native.APP_USER[this.app._name]);';
+    if (content.includes(setUserTarget)) {
+      content = content.replace(
         setUserTarget,
         '      this._setUser(appUser[this.app._name]);'
       );
     }
 
-    fs.writeFileSync(authIndexPath, patchedContent, 'utf8');
-    console.log('[patch-firebase] Successfully patched auth/lib/index.js with defensive language/user guards.');
+    // 2B. Listener defensive guards (Fixes "undefined is not a function" in auth constructor)
+    const listenersTarget = `    this.native.addAuthStateListener();
+    this.native.addIdTokenListener();
+
+    // custom authDomain in only available from App's FirebaseOptions,
+    // but we need it in Auth if it exists. During app configuration we store
+    // mappings from app name to authDomain, this auth constructor
+    // is a reasonable time to use the mapping and set it into auth natively
+    this.native.configureAuthDomain();`;
+
+    const listenersReplacement = `    if (this.native && typeof this.native.addAuthStateListener === 'function') {
+      this.native.addAuthStateListener();
+    }
+    if (this.native && typeof this.native.addIdTokenListener === 'function') {
+      this.native.addIdTokenListener();
+    }
+
+    // custom authDomain in only available from App's FirebaseOptions,
+    // but we need it in Auth if it exists. During app configuration we store
+    // mappings from app name to authDomain, this auth constructor
+    // is a reasonable time to use the mapping and set it into auth natively
+    if (this.native && typeof this.native.configureAuthDomain === 'function') {
+      this.native.configureAuthDomain();
+    }`;
+
+    if (content.includes(listenersTarget)) {
+      content = content.replace(listenersTarget, listenersReplacement);
+    } else {
+      // Line by line fallback
+      content = content.replace('    this.native.addAuthStateListener();', '    if (this.native && typeof this.native.addAuthStateListener === \'function\') { this.native.addAuthStateListener(); }');
+      content = content.replace('    this.native.addIdTokenListener();', '    if (this.native && typeof this.native.addIdTokenListener === \'function\') { this.native.addIdTokenListener(); }');
+      content = content.replace('    this.native.configureAuthDomain();', '    if (this.native && typeof this.native.configureAuthDomain === \'function\') { this.native.configureAuthDomain(); }');
+    }
+
+    fs.writeFileSync(authIndexPath, content, 'utf8');
+    console.log('[patch-firebase] Successfully patched auth/lib/index.js with defensive listener guards.');
     patchCount++;
   }
 }

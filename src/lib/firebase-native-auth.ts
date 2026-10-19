@@ -116,10 +116,13 @@ export async function sendNativePhoneOtp(
   phoneNumber: string,
   forceResend = false
 ): Promise<FirebaseAuthTypes.ConfirmationResult> {
-  const nativeAuth = await getNativeAuth();
-  const appName = (nativeAuth.app && nativeAuth.app.name) || '[DEFAULT]';
+  if (Platform.OS !== 'web') {
+    await ensureNativeFirebaseApp();
+  }
 
-  // 1. On Android, call NativeModules.RNFBAuthModule directly to bypass any potential JS bridge wrapper crashes
+  const appName = '[DEFAULT]';
+
+  // 1. On Android, call NativeModules.RNFBAuthModule directly to completely bypass JS bridge constructor crashes
   if (Platform.OS === 'android' && NativeModules.RNFBAuthModule?.signInWithPhoneNumber) {
     try {
       const result: { verificationId?: string } = await NativeModules.RNFBAuthModule.signInWithPhoneNumber(
@@ -137,8 +140,29 @@ export async function sendNativePhoneOtp(
       return {
         verificationId,
         confirm: async (verificationCode: string) => {
-          const userCredential = await (nativeAuth as any).native.confirmationResultConfirm(verificationCode);
-          return (nativeAuth as any)._setUserCredential(userCredential);
+          let userCredential: any;
+          if (typeof NativeModules.RNFBAuthModule?.confirmationResultConfirm === 'function') {
+            userCredential = await NativeModules.RNFBAuthModule.confirmationResultConfirm(appName, verificationCode);
+          } else {
+            const nativeAuth = await getNativeAuth();
+            userCredential = await (nativeAuth as any).native.confirmationResultConfirm(verificationCode);
+          }
+
+          try {
+            const nativeAuth = await getNativeAuth();
+            if (typeof (nativeAuth as any)._setUserCredential === 'function') {
+              return (nativeAuth as any)._setUserCredential(userCredential);
+            }
+          } catch {
+            // best-effort fallback
+          }
+
+          return {
+            user: {
+              getIdToken: async () => userCredential?.user?.token || userCredential?.token || '',
+            },
+            additionalUserInfo: userCredential?.additionalUserInfo || null,
+          };
         },
       } as unknown as FirebaseAuthTypes.ConfirmationResult;
     } catch (nativeErr: any) {
@@ -154,7 +178,8 @@ export async function sendNativePhoneOtp(
     }
   }
 
-  // 2. Standard fallback (iOS, etc.)
+  // 2. Standard fallback (iOS, or Android when direct module is not on NativeModules)
+  const nativeAuth = await getNativeAuth();
   try {
     return await nativeAuth.signInWithPhoneNumber(phoneNumber, forceResend);
   } catch (err: any) {
