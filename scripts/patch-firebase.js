@@ -1,24 +1,143 @@
 /**
- * Robust patch for @react-native-firebase/app/lib/internal/NativeFirebaseError.js
+ * Comprehensive compatibility patch for @react-native-firebase under React Native New Architecture (TurboModules).
  * 
- * Prevents Hermes engine TypeError: "Cannot convert undefined value to object"
- * by safely guarding nativeError, userInfo, code, message, and jsStack.
+ * Fixes Hermes engine crash "TypeError: Cannot convert undefined value to object" by:
+ * 1. Safely exposing getConstants() in registry/nativeModule.js for TurboModule interop.
+ * 2. Defensively guarding APP_LANGUAGE and APP_USER in auth/lib/index.js constructor.
+ * 3. Preserving bulletproof NativeFirebaseError.js against unmasked rejection payloads.
+ * 
+ * Designed to be deterministic, idempotent, and to fail clearly if source files differ from expected versions.
  */
 
 const fs = require('fs');
 const path = require('path');
 
-const targetPath = path.resolve(
+let patchCount = 0;
+let skipCount = 0;
+
+// ─── 1. Patch @react-native-firebase/app/lib/internal/registry/nativeModule.js ───
+const nativeModulePath = path.resolve(
+  __dirname,
+  '../node_modules/@react-native-firebase/app/lib/internal/registry/nativeModule.js'
+);
+
+if (!fs.existsSync(nativeModulePath)) {
+  console.log('[patch-firebase] registry/nativeModule.js not found, skipping.');
+} else {
+  const content = fs.readFileSync(nativeModulePath, 'utf8');
+  const alreadyPatchedMarker = 'NativeModule.getConstants === \'function\'';
+
+  if (content.includes(alreadyPatchedMarker)) {
+    console.log('[patch-firebase] registry/nativeModule.js is already fully patched.');
+    skipCount++;
+  } else {
+    const targetPattern = '  const properties = Object.keys(NativeModule);';
+    if (!content.includes(targetPattern)) {
+      throw new Error(
+        `[patch-firebase] CRITICAL: Target pattern not found in ${nativeModulePath}. Expected: "${targetPattern}"`
+      );
+    }
+
+    const replacement = `  if (typeof NativeModule.getConstants === 'function') {
+    try {
+      const constants = NativeModule.getConstants();
+      if (constants && typeof constants === 'object') {
+        Object.assign(native, constants);
+      }
+    } catch (err) {
+      console.warn(\`[RNFB \${namespace}] Failed to extract getConstants() from NativeModule:\`, err && (err.message || err));
+    }
+  }
+
+  const properties = Object.keys(NativeModule);`;
+
+    const patchedContent = content.replace(targetPattern, replacement);
+    fs.writeFileSync(nativeModulePath, patchedContent, 'utf8');
+    console.log('[patch-firebase] Successfully patched registry/nativeModule.js with getConstants support.');
+    patchCount++;
+  }
+}
+
+// ─── 2. Patch @react-native-firebase/auth/lib/index.js ────────────────────────
+const authIndexPath = path.resolve(
+  __dirname,
+  '../node_modules/@react-native-firebase/auth/lib/index.js'
+);
+
+if (!fs.existsSync(authIndexPath)) {
+  console.log('[patch-firebase] auth/lib/index.js not found, skipping.');
+} else {
+  const content = fs.readFileSync(authIndexPath, 'utf8');
+  const alreadyPatchedMarker = 'const appLanguage = (this.native && this.native.APP_LANGUAGE) || {};';
+
+  if (content.includes(alreadyPatchedMarker)) {
+    console.log('[patch-firebase] auth/lib/index.js is already fully patched.');
+    skipCount++;
+  } else {
+    const langTarget = '    this._languageCode = this.native.APP_LANGUAGE[this.app._name];';
+    const langDefaultTarget = "      this._languageCode = this.native.APP_LANGUAGE['[DEFAULT]'];";
+    const userTarget = '    if (this.native.APP_USER[this.app._name]) {';
+    const setUserTarget = '      this._setUser(this.native.APP_USER[this.app._name]);';
+
+    if (!content.includes(langTarget)) {
+      throw new Error(
+        `[patch-firebase] CRITICAL: Language target pattern not found in ${authIndexPath}. Expected: "${langTarget}"`
+      );
+    }
+    if (!content.includes(userTarget)) {
+      throw new Error(
+        `[patch-firebase] CRITICAL: User target pattern not found in ${authIndexPath}. Expected: "${userTarget}"`
+      );
+    }
+
+    let patchedContent = content;
+
+    const langReplacement = `    const appLanguage = (this.native && this.native.APP_LANGUAGE) || {};
+    this._languageCode = appLanguage[this.app._name] || appLanguage['[DEFAULT]'] || '';`;
+    patchedContent = patchedContent.replace(langTarget, langReplacement);
+
+    // Replace the secondary default language lookup if present
+    if (patchedContent.includes(langDefaultTarget)) {
+      patchedContent = patchedContent.replace(
+        langDefaultTarget,
+        "      this._languageCode = appLanguage['[DEFAULT]'] || '';"
+      );
+    }
+
+    const userReplacement = `    const appUser = (this.native && this.native.APP_USER) || {};
+    if (appUser[this.app._name]) {`;
+    patchedContent = patchedContent.replace(userTarget, userReplacement);
+
+    if (patchedContent.includes(setUserTarget)) {
+      patchedContent = patchedContent.replace(
+        setUserTarget,
+        '      this._setUser(appUser[this.app._name]);'
+      );
+    }
+
+    fs.writeFileSync(authIndexPath, patchedContent, 'utf8');
+    console.log('[patch-firebase] Successfully patched auth/lib/index.js with defensive language/user guards.');
+    patchCount++;
+  }
+}
+
+// ─── 3. Patch @react-native-firebase/app/lib/internal/NativeFirebaseError.js ───
+const errorPath = path.resolve(
   __dirname,
   '../node_modules/@react-native-firebase/app/lib/internal/NativeFirebaseError.js'
 );
 
-if (!fs.existsSync(targetPath)) {
-  console.log('[patch-firebase] Target file not found, skipping patch:', targetPath);
-  process.exit(0);
-}
+if (!fs.existsSync(errorPath)) {
+  console.log('[patch-firebase] NativeFirebaseError.js not found, skipping.');
+} else {
+  const content = fs.readFileSync(errorPath, 'utf8');
+  const alreadyPatchedMarker = 'const safeError = (nativeError && typeof nativeError === \'object\') ? nativeError : {};';
 
-const safeContent = `/*
+  if (content.includes(alreadyPatchedMarker)) {
+    console.log('[patch-firebase] NativeFirebaseError.js is already fully patched.');
+    skipCount++;
+  } else {
+    const safeContent = `/*
  * Copyright (c) 2016-present Invertase Limited & Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -94,6 +213,10 @@ export default class NativeFirebaseError extends Error {
   }
 }
 `;
+    fs.writeFileSync(errorPath, safeContent, 'utf8');
+    console.log('[patch-firebase] Successfully installed bulletproof NativeFirebaseError.js.');
+    patchCount++;
+  }
+}
 
-fs.writeFileSync(targetPath, safeContent, 'utf8');
-console.log('[patch-firebase] Successfully installed bulletproof NativeFirebaseError.js');
+console.log(`[patch-firebase] Done. Patched: ${patchCount}, Already up-to-date: ${skipCount}`);
