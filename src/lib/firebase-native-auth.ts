@@ -1,12 +1,11 @@
-import { Platform, NativeModules } from 'react-native';
+import { Platform } from 'react-native';
 import firebase from '@react-native-firebase/app';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import messaging, { FirebaseMessagingTypes } from '@react-native-firebase/messaging';
 
 /**
  * Standard Firebase project configuration matching google-services.json for com.volohome.app.
- * All fields including databaseURL and authDomain are defined to prevent
- * Android NoSuchKeyException or validation errors if fallback initialization is required.
+ * Retained for reference and manual fallback if Android native initialization is delayed.
  */
 const FIREBASE_CONFIG = {
   apiKey: 'AIzaSyC7lRr_t9cXvXFx2IbNhJwQg2hRxbs9eQ8',
@@ -33,8 +32,8 @@ export function isNativeFirebaseDefaultAppReady(): boolean {
 
 /**
  * Ensures that the native default Firebase app is initialized.
- * If already initialized by Android's ContentProvider from google-services.json, this is a no-op.
- * If not yet initialized, safely calls firebase.initializeApp() with all required options.
+ * On Android, the Google Services Gradle plugin and FirebaseInitProvider automatically
+ * initialize the default app natively from google-services.json at startup.
  */
 export async function ensureNativeFirebaseApp(): Promise<void> {
   if (Platform.OS === 'web') return;
@@ -44,23 +43,33 @@ export async function ensureNativeFirebaseApp(): Promise<void> {
   }
 
   try {
-    await firebase.initializeApp(FIREBASE_CONFIG);
+    // Resolving firebase.app() verifies and binds the native default app to JS
+    firebase.app();
   } catch (err: any) {
     if (err?.message && (err.message.includes('already exists') || err.message.includes('[DEFAULT]'))) {
       return;
     }
-    console.warn('[Firebase Native Auth] ensureNativeFirebaseApp warning:', err?.message || err);
+    // If not initialized natively, fallback to explicit initialization
+    try {
+      await firebase.initializeApp(FIREBASE_CONFIG);
+    } catch (initErr: any) {
+      if (!initErr?.message?.includes('already exists')) {
+        console.warn('[Firebase Native Auth] ensureNativeFirebaseApp warning:', initErr?.message || initErr);
+      }
+    }
   }
 }
 
 /**
- * Returns the native Firebase Auth instance.
+ * Returns the native Firebase Auth instance using the supported public API: auth().
  * Automatically guarantees that the default Firebase app is ready first.
  */
 export async function getNativeAuth(): Promise<FirebaseAuthTypes.Module> {
-  if (Platform.OS !== 'web') {
-    await ensureNativeFirebaseApp();
+  if (Platform.OS === 'web') {
+    throw new Error('getNativeAuth should not be called on web.');
   }
+
+  await ensureNativeFirebaseApp();
 
   // 1. Standard default function import: auth()
   if (typeof auth === 'function') {
@@ -107,89 +116,36 @@ export function getNativeMessaging(): FirebaseMessagingTypes.Module | null {
 }
 
 /**
- * Safely requests an SMS OTP from native Firebase Auth.
+ * Requests an SMS OTP using the official supported @react-native-firebase/auth API:
+ * auth().signInWithPhoneNumber(phoneNumber, forceResend)
  * 
- * Invokes native Android authentication with defensive error unmasking to ensure
- * Hermes engine never crashes on undefined userInfo.code.
+ * Returns the genuine ConfirmationResult instance from Firebase Auth.
  */
 export async function sendNativePhoneOtp(
   phoneNumber: string,
   forceResend = false
 ): Promise<FirebaseAuthTypes.ConfirmationResult> {
-  if (Platform.OS !== 'web') {
-    await ensureNativeFirebaseApp();
+  if (Platform.OS === 'web') {
+    throw new Error('sendNativePhoneOtp should only be called on native platforms.');
   }
 
-  const appName = '[DEFAULT]';
-
-  // 1. On Android, call NativeModules.RNFBAuthModule directly to completely bypass JS bridge constructor crashes
-  if (Platform.OS === 'android' && NativeModules.RNFBAuthModule?.signInWithPhoneNumber) {
-    try {
-      const result: { verificationId?: string } = await NativeModules.RNFBAuthModule.signInWithPhoneNumber(
-        appName,
-        phoneNumber,
-        forceResend
-      );
-
-      const verificationId = result?.verificationId;
-      if (!verificationId) {
-        throw new Error('No verification ID was returned by Firebase Phone Auth.');
-      }
-
-      // Return a complete ConfirmationResult-compatible object
-      return {
-        verificationId,
-        confirm: async (verificationCode: string) => {
-          let userCredential: any;
-          if (typeof NativeModules.RNFBAuthModule?.confirmationResultConfirm === 'function') {
-            userCredential = await NativeModules.RNFBAuthModule.confirmationResultConfirm(appName, verificationCode);
-          } else {
-            const nativeAuth = await getNativeAuth();
-            userCredential = await (nativeAuth as any).native.confirmationResultConfirm(verificationCode);
-          }
-
-          try {
-            const nativeAuth = await getNativeAuth();
-            if (typeof (nativeAuth as any)._setUserCredential === 'function') {
-              return (nativeAuth as any)._setUserCredential(userCredential);
-            }
-          } catch {
-            // best-effort fallback
-          }
-
-          return {
-            user: {
-              getIdToken: async () => userCredential?.user?.token || userCredential?.token || '',
-            },
-            additionalUserInfo: userCredential?.additionalUserInfo || null,
-          };
-        },
-      } as unknown as FirebaseAuthTypes.ConfirmationResult;
-    } catch (nativeErr: any) {
-      // Cleanly unmask the native code and message so Hermes never crashes on undefined userInfo
-      const rawCode = String(nativeErr?.code || nativeErr?.userInfo?.code || '');
-      const rawMessage = String(nativeErr?.message || nativeErr?.userInfo?.message || 'Phone verification failed');
-      
-      const cleanError = new Error(rawMessage);
-      (cleanError as any).code = rawCode.startsWith('auth/') ? rawCode : (rawCode ? `auth/${rawCode}` : 'auth/unknown');
-      (cleanError as any).nativeErrorCode = rawCode;
-      (cleanError as any).nativeErrorMessage = rawMessage;
-      throw cleanError;
-    }
-  }
-
-  // 2. Standard fallback (iOS, or Android when direct module is not on NativeModules)
+  await ensureNativeFirebaseApp();
   const nativeAuth = await getNativeAuth();
+
+  // Safe masked diagnostic log (e.g. +91******4905) - never logs full phone or OTP
+  const maskedPhone = phoneNumber.length > 7
+    ? `${phoneNumber.slice(0, 3)}******${phoneNumber.slice(-4)}`
+    : '***';
+  console.log(`[Firebase Native Auth] Requesting phone OTP for ${maskedPhone} (forceResend: ${forceResend})`);
+
   try {
     return await nativeAuth.signInWithPhoneNumber(phoneNumber, forceResend);
   } catch (err: any) {
-    const rawMessage = String(err?.userInfo?.message || err?.nativeErrorMessage || err?.message || '');
-    if (rawMessage.includes('Cannot convert undefined value to object')) {
-      const cleanError = new Error('App verification failed. Please check Google Play Integrity and Firebase SMS region settings.');
-      (cleanError as any).code = 'auth/app-not-authorized';
-      throw cleanError;
-    }
+    const rawCode = String(err?.code || err?.nativeErrorCode || '');
+    const rawMessage = String(err?.message || err?.nativeErrorMessage || 'Phone verification failed');
+    console.warn(`[Firebase Native Auth] signInWithPhoneNumber failed: [${rawCode}] ${rawMessage}`);
     throw err;
   }
 }
+
 
