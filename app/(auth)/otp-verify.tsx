@@ -111,8 +111,7 @@ export default function OtpVerifyScreen() {
         rawMessage.includes('invalid-app-credential') ||
         rawMessage.includes('app-not-authorized')
       ) {
-        userFriendlyMessage =
-          'App verification failed (Play Integrity/SHA fingerprint not recognized). Please verify that the build SHA fingerprint is registered in Firebase Console.';
+        userFriendlyMessage = `App verification failed (Play Integrity/SHA fingerprint not recognized).\n\n[Details: ${errorCode || 'auth'} - ${rawMessage || 'Check google-services.json / Play Integrity'}]`;
       } else if (errorCode.includes('quota-exceeded') || rawMessage.includes('quota')) {
         userFriendlyMessage = 'SMS quota exceeded for today. Please try again later or use PIN login.';
       } else if (errorCode.includes('too-many-requests') || rawMessage.includes('too-many-requests')) {
