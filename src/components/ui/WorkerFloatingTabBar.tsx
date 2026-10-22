@@ -24,7 +24,10 @@ export default function WorkerFloatingTabBar({ state, descriptors, navigation }:
     nestedRouteName === '[id]' ||
     pathname.includes('/jobs/') ||
     pathname.includes('/profile/availability') ||
-    pathname.includes('/settlements')
+    pathname.includes('/settlements') ||
+    pathname.includes('/kyc') ||
+    pathname === '/kyc' ||
+    currentRoute?.name === 'kyc'
   ) {
     return null;
   }

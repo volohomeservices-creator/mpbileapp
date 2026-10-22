@@ -68,6 +68,7 @@ export default function WorkerLayout() {
         name="kyc"
         options={{
           href: null,
+          tabBarStyle: { display: 'none' },
         }}
       />
     </Tabs>

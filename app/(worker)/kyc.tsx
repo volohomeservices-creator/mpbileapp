@@ -11,7 +11,7 @@ import {
   Platform,
   Image,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -67,6 +67,7 @@ const DOC_CONFIGS: Array<{
 
 export default function WorkerKycScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
 
   const [loading, setLoading] = useState(true);
@@ -394,7 +395,7 @@ export default function WorkerKycScreen() {
         </View>
 
         <ScrollView
-          contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
+          contentContainerStyle={{ padding: 16, paddingBottom: Math.max(insets.bottom, 16) + 90 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -803,7 +804,10 @@ export default function WorkerKycScreen() {
         </ScrollView>
 
         {/* Sticky Submit Footer */}
-        <View className="bg-white border-t border-slate-200 p-4 shadow-lg absolute bottom-0 left-0 right-0">
+        <View
+          style={{ paddingBottom: Math.max(insets.bottom, 16) }}
+          className="bg-white border-t border-slate-200 px-4 pt-3.5 shadow-2xl absolute bottom-0 left-0 right-0 z-50"
+        >
           <TouchableOpacity
             onPress={handleSaveAndSubmit}
             disabled={submitting}
