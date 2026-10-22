@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform, Dimensions, StyleSheet } from 'react-native';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform, Dimensions, StyleSheet, BackHandler, ToastAndroid } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import { getFastCurrentLocation } from '@/utils/fastLocation';
 import { getServices, getActiveBookings, getActiveBanners, getInitialCachedCustomerBanners, getPublicReviews } from '@/api/bookings';
 import { useAuth } from '@/hooks/useAuth';
 import { useRefreshOnFocus } from '@/hooks/useRefreshOnFocus';
@@ -60,6 +61,28 @@ export default function CustomerHomeScreen() {
   const userInitial = user?.full_name
     ? user.full_name.trim().charAt(0).toUpperCase()
     : ((user as any)?.name ? (user as any).name.trim().charAt(0).toUpperCase() : '');
+
+  // Double-tap hardware back button to exit cleanly on Android
+  const lastBackPressTime = useRef(0);
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        const now = Date.now();
+        if (now - lastBackPressTime.current < 2000) {
+          BackHandler.exitApp();
+          return true;
+        }
+        lastBackPressTime.current = now;
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Press back again to exit', ToastAndroid.SHORT);
+        }
+        return true;
+      };
+
+      const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => sub.remove();
+    }, [])
+  );
 
   const {
     items: cartItems,
@@ -115,7 +138,7 @@ export default function CustomerHomeScreen() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Dynamic Location reverse-geocoding
+  // Dynamic Location reverse-geocoding (Instant resolution)
   useEffect(() => {
     (async () => {
       try {
@@ -125,38 +148,13 @@ export default function CustomerHomeScreen() {
           return;
         }
 
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setLocationName('Hyderabad');
-          return;
-        }
-        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-
-        if (Platform.OS === 'web') {
-          try {
-            const url = `https://nominatim.openstreetmap.org/reverse?lat=${location.coords.latitude}&lon=${location.coords.longitude}&format=json`;
-            const res = await fetch(url);
-            if (res.ok) {
-              const data = await res.json();
-              if (data?.address) {
-                const city = data.address.city || data.address.town || data.address.suburb || 'Hyderabad';
-                setLocationName(city);
-              }
-            }
-          } catch {
-            setLocationName('Hyderabad');
-          }
+        const fastLoc = await getFastCurrentLocation();
+        if (fastLoc?.city) {
+          setLocationName(fastLoc.city);
         } else {
-          const reverse = await Location.reverseGeocodeAsync({ latitude: location.coords.latitude, longitude: location.coords.longitude });
-          if (reverse && reverse.length > 0) {
-            const first = reverse[0];
-            const city = first.city || first.subregion || first.region || 'Hyderabad';
-            setLocationName(city);
-          }
+          setLocationName('Hyderabad');
         }
       } catch (e: any) {
-        const errMsg = e?.message || (typeof e === 'object' && e?.code ? `Code ${e.code}` : null);
-        console.warn('Location resolution fallback to default:', errMsg || 'Permission not granted or unavailable');
         setLocationName('Hyderabad');
       }
     })();
@@ -197,10 +195,15 @@ export default function CustomerHomeScreen() {
   const publicReviews = publicReviewsData?.reviews || [];
   const platformReputation = publicReviewsData?.reputation;
 
-  const handleCategoryPress = (categoryId?: string) => {
+  const handleCategoryPress = (target?: string) => {
+    let catId = target || 'all';
+    if (catId.startsWith('/') || catId.includes('services')) {
+      const match = catId.match(/[?&]category(?:Id)?=([^&]+)/i);
+      catId = match ? decodeURIComponent(match[1]) : 'all';
+    }
     router.push({
       pathname: '/(customer)/bookings/create',
-      params: { categoryId: categoryId || 'all' },
+      params: { categoryId: catId },
     });
   };
 
@@ -257,8 +260,22 @@ export default function CustomerHomeScreen() {
           <Ionicons name="chevron-down" size={11} color="#64748B" />
         </TouchableOpacity>
 
-        {/* Right: Actions (Notification & Profile Avatar) */}
+        {/* Right: Actions (Cart, Notification & Profile Avatar) */}
         <View className="flex-row items-center gap-2">
+          {/* Cart Header Button */}
+          <TouchableOpacity
+            onPress={() => router.push('/(customer)/cart')}
+            activeOpacity={0.8}
+            className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200/80 items-center justify-center relative active:bg-slate-200"
+          >
+            <Ionicons name="cart-outline" size={18} color="#1E293B" />
+            {totalCartCount > 0 && (
+              <View className="min-w-[16px] h-4 px-1 rounded-full bg-[#3C01A7] absolute -top-1 -right-1 items-center justify-center border-2 border-white">
+                <Text className="text-white text-[9px] font-black">{totalCartCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
           {/* Notification Button */}
           <TouchableOpacity
             onPress={() => router.push('/(customer)/notifications')}
@@ -297,7 +314,7 @@ export default function CustomerHomeScreen() {
       ) : (
         <ScrollView
           className="flex-1 bg-[#F8F7FC]"
-          contentContainerStyle={{ paddingBottom: 130 }}
+          contentContainerStyle={{ paddingBottom: totalCartCount > 0 ? 175 : 120 }}
           showsVerticalScrollIndicator={false}
         >
         {/* ========================================================================= */}
@@ -882,7 +899,7 @@ export default function CustomerHomeScreen() {
         <View style={{ position: 'absolute', bottom: Platform.OS === 'ios' ? 90 : 80, left: 16, right: 16, zIndex: 900 }}>
           <TouchableOpacity
             activeOpacity={0.9}
-            onPress={() => router.push('/(customer)/cart/index' as any)}
+            onPress={() => router.push('/(customer)/cart')}
             style={{ backgroundColor: '#1E1535' }}
             className="rounded-2xl p-3.5 shadow-2xl border border-white/10 flex-row justify-between items-center"
           >

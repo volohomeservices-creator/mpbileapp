@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, TextInput, Platform, Linking } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, TextInput, Platform, Linking, BackHandler } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -34,6 +34,23 @@ export default function WorkerJobDetailScreen() {
   const queryClient = useQueryClient();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t } = useLanguage();
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(worker)/home');
+    }
+  };
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, []);
 
   // States
   const [otp, setOtp] = useState('');
@@ -172,7 +189,7 @@ export default function WorkerJobDetailScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['worker-dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['worker-available-jobs'] });
-      router.back();
+      handleBack();
     },
   });
 
@@ -338,7 +355,7 @@ export default function WorkerJobDetailScreen() {
       <View className="flex-1 justify-center items-center bg-slate-50 px-6">
         <Ionicons name="alert-circle-outline" size={54} color="#EF4444" />
         <Text className="text-slate-900 text-lg font-bold mt-4">{t('bookings.bookingNotFound')}</Text>
-        <Button label={t('workerHome.goToJob') || 'Go Back'} onPress={() => router.back()} className="mt-5" />
+        <Button label={t('workerHome.goToJob') || 'Go Back'} onPress={handleBack} className="mt-5" />
       </View>
     );
   }
@@ -438,7 +455,7 @@ export default function WorkerJobDetailScreen() {
         <View className="max-w-md w-full mx-auto flex-row items-center justify-between">
           <View className="flex-row items-center flex-1">
             <TouchableOpacity
-              onPress={() => router.back()}
+              onPress={handleBack}
               activeOpacity={0.7}
               className="w-10 h-10 rounded-full bg-slate-100 justify-center items-center mr-3 active:bg-slate-200"
             >

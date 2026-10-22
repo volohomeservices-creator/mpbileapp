@@ -64,6 +64,12 @@ export default function WorkerLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="kyc"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

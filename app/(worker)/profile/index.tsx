@@ -291,7 +291,7 @@ export default function WorkerProfileScreen() {
 
             {/* KYC status details */}
             <TouchableOpacity
-              onPress={() => showAlert(t('profile.kycVerificationStatus'), `KYC status is ${userProfile?.kyc_status || 'PENDING'}.\n\nRequired uploads:\n- Aadhar Card: Verified\n- PAN Card: Verified\n- Live Selfie: Verified`)}
+              onPress={() => router.push('/(worker)/kyc' as any)}
               activeOpacity={0.8}
               className="py-4 flex-row justify-between items-center"
             >
@@ -299,7 +299,16 @@ export default function WorkerProfileScreen() {
                 <Ionicons name="shield-checkmark-outline" size={16} color="rgb(var(--text-secondary))" className="mr-3" />
                 <Text className="text-text-primary text-sm font-semibold">{t('profile.kycVerificationStatus')}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={14} color="rgb(var(--text-muted))" />
+              <View className="flex-row items-center gap-1.5">
+                <Text
+                  className={`text-[11px] font-bold uppercase ${
+                    userProfile?.kyc_status === 'APPROVED' ? 'text-emerald-600' : 'text-amber-600'
+                  }`}
+                >
+                  {userProfile?.kyc_status || 'PENDING'}
+                </Text>
+                <Ionicons name="chevron-forward" size={14} color="rgb(var(--text-muted))" />
+              </View>
             </TouchableOpacity>
 
             {/* Language Picker */}

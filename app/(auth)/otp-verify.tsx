@@ -8,6 +8,7 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
+  BackHandler,
 } from 'react-native';
 import { useState, useRef, useEffect } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -71,7 +72,7 @@ export default function OtpVerifyScreen() {
     const phoneCheck = normalizeIndianPhoneNumber(phone);
     if (!phoneCheck.isValid) {
       Alert.alert('Phone Required', phoneCheck.error || 'Please enter a valid 10-digit mobile number.', [
-        { text: 'Back to Login', onPress: () => router.back() }
+        { text: 'Back to Login', onPress: handleBack }
       ]);
       setSending(false);
       return;
@@ -133,7 +134,7 @@ export default function OtpVerifyScreen() {
         userFriendlyMessage,
         [
           { text: 'Try Again', onPress: () => sendOtp() },
-          { text: 'Back to Login', onPress: () => router.back(), style: 'cancel' }
+          { text: 'Back to Login', onPress: handleBack, style: 'cancel' }
         ]
       );
     } finally {
@@ -141,10 +142,54 @@ export default function OtpVerifyScreen() {
     }
   };
 
-  const handleOtpChange = (val: string, idx: number) => {
-    const cleanVal = val.length > 1 ? val.charAt(val.length - 1) : val;
-    if (!/^\d?$/.test(cleanVal)) return;
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(auth)/login');
+    }
+  };
 
+  // Hardware back press on Android
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const backSub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => backSub.remove();
+  }, []);
+
+  const handleOtpChange = (val: string, idx: number) => {
+    // Check if the user pasted or autofilled a multi-digit SMS code
+    const digitsOnly = val.replace(/\D/g, '');
+
+    if (digitsOnly.length >= 6) {
+      // Full 6-digit OTP autofill / paste from SMS
+      const fullOtp = digitsOnly.slice(0, 6).split('');
+      setOtp(fullOtp);
+      inputRefs.current[5]?.focus();
+      // Auto-trigger verification immediately
+      verifyOtp(digitsOnly.slice(0, 6));
+      return;
+    }
+
+    if (digitsOnly.length > 1) {
+      // Multi-character input (e.g. partial paste)
+      const next = [...otp];
+      for (let i = 0; i < digitsOnly.length && (idx + i) < 6; i++) {
+        next[idx + i] = digitsOnly[i];
+      }
+      setOtp(next);
+      const nextFocus = Math.min(idx + digitsOnly.length, 5);
+      inputRefs.current[nextFocus]?.focus();
+      if (next.every(Boolean)) {
+        verifyOtp(next.join(''));
+      }
+      return;
+    }
+
+    const cleanVal = digitsOnly;
     const next = [...otp];
     next[idx] = cleanVal;
     setOtp(next);
@@ -204,9 +249,13 @@ export default function OtpVerifyScreen() {
       if (data.promptPinSetup || isForgotPin === 'true') {
         setShowPinSetup(true);
       } else {
-        // Direct Route by role
+        // Direct Route by role and KYC requirement
         if (data.user.role === 'worker') {
-          router.replace('/(worker)/home');
+          if (data.redirectTo === '/worker/kyc' || data.isNewUser) {
+            router.replace('/(worker)/kyc' as any);
+          } else {
+            router.replace('/(worker)/home');
+          }
         } else {
           router.replace('/(customer)/home');
         }
@@ -260,10 +309,14 @@ export default function OtpVerifyScreen() {
         Alert.alert(successTitle, successMsg);
       }
       
-      // Redirect by role
+      // Redirect by role and KYC requirement
       const targetRole = authResponseData?.user?.role || role;
       if (targetRole === 'worker') {
-        router.replace('/(worker)/home');
+        if (authResponseData?.redirectTo === '/worker/kyc' || authResponseData?.isNewUser) {
+          router.replace('/(worker)/kyc' as any);
+        } else {
+          router.replace('/(worker)/home');
+        }
       } else {
         router.replace('/(customer)/home');
       }
@@ -454,7 +507,7 @@ export default function OtpVerifyScreen() {
             <View>
               {/* Back Button */}
               <TouchableOpacity
-                onPress={() => router.back()}
+                onPress={handleBack}
                 activeOpacity={0.8}
                 className="w-10 h-10 rounded-full bg-background-secondary justify-center items-center mb-6 active:bg-slate-100 border border-border-primary"
               >
@@ -475,7 +528,7 @@ export default function OtpVerifyScreen() {
                 </View>
               ) : (
                 <>
-                  {/* OTP Boxes - Centered and cleanly styled */}
+                  {/* OTP Boxes - Centered and cleanly styled with SMS Autofill */}
                   <View className="flex-row justify-center gap-2 mb-8">
                     {otp.map((digit, idx) => (
                       <TextInput
@@ -491,11 +544,13 @@ export default function OtpVerifyScreen() {
                           backgroundColor: '#F8FAFC',
                         }}
                         keyboardType="numeric"
-                        maxLength={1}
+                        maxLength={idx === 0 ? 6 : 1}
                         value={digit}
                         onChangeText={(v) => handleOtpChange(v, idx)}
                         onKeyPress={(e) => handleKeyPress(e, idx)}
                         autoFocus={idx === 0}
+                        textContentType="oneTimeCode"
+                        autoComplete="sms-otp"
                       />
                     ))}
                   </View>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert, Pressable, Platform, StyleSheet } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert, Pressable, Platform, StyleSheet, BackHandler } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,6 +22,27 @@ export default function BookingsListScreen() {
   const [reviewBookingId, setReviewBookingId] = useState<string | null>(null);
   const [rating, setRating] = useState<number>(5);
   const [comment, setComment] = useState<string>('');
+
+  const handleBack = () => {
+    if (reviewBookingId) {
+      setReviewBookingId(null);
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(customer)/home');
+    }
+  };
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [reviewBookingId]);
 
   useEffect(() => {
     if (openReview) {
@@ -153,7 +174,7 @@ export default function BookingsListScreen() {
       {/* Header */}
       <View className="px-6 py-4 border-b border-border-primary bg-white shadow-sm flex-row items-center">
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={handleBack}
           activeOpacity={0.8}
           className="w-9 h-9 rounded-xl bg-background-secondary border border-border-primary justify-center items-center mr-3 active:bg-slate-100"
         >

@@ -1,4 +1,5 @@
-import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, Alert, Platform } from 'react-native';
+import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, Alert, Platform, BackHandler } from 'react-native';
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +17,24 @@ import { Button } from '@/components/ui/Button';
 export default function CustomerWalletScreen() {
   const router = useRouter();
   const { t } = useLanguage();
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(customer)/home');
+    }
+  };
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, []);
+
   const { data, isLoading, refetch, isError } = useQuery({
     queryKey: ['customer-wallet'],
     queryFn: getCustomerWallet,
@@ -85,7 +104,7 @@ export default function CustomerWalletScreen() {
       {/* Header */}
       <View className="px-6 py-4 flex-row items-center border-b border-border-primary bg-white shadow-sm">
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={handleBack}
           activeOpacity={0.8}
           className="w-9 h-9 rounded-xl bg-background-secondary border border-border-primary justify-center items-center mr-3 active:bg-slate-100"
         >

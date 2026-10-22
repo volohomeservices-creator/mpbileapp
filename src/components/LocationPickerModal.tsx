@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import { getFastCurrentLocation } from '@/utils/fastLocation';
 
 export interface CityOption {
   id: string;
@@ -63,45 +64,39 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
   const handleDetectLocation = async () => {
     setIsDetecting(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Location Permission',
-          'Please allow location access to auto-detect your current city.'
-        );
-        setIsDetecting(false);
-        return;
-      }
+      const fastLoc = await getFastCurrentLocation({ forceFresh: true });
+      let detectedCity = fastLoc?.city || '';
 
-      const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-
-      let detectedCity = '';
-      if (Platform.OS === 'web') {
-        try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`
-          );
-          if (res.ok) {
-            const data = await res.json();
-            detectedCity =
-              data?.address?.city ||
-              data?.address?.town ||
-              data?.address?.suburb ||
-              data?.address?.state_district ||
-              '';
+      if (!detectedCity && fastLoc) {
+        if (Platform.OS === 'web') {
+          try {
+            const res = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?lat=${fastLoc.latitude}&lon=${fastLoc.longitude}&format=json`
+            );
+            if (res.ok) {
+              const data = await res.json();
+              detectedCity =
+                data?.address?.city ||
+                data?.address?.town ||
+                data?.address?.suburb ||
+                data?.address?.state_district ||
+                '';
+            }
+          } catch {
+            // ignore
           }
-        } catch {
-          // ignore
-        }
-      } else {
-        const rev = await Location.reverseGeocodeAsync({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        });
-        if (rev && rev.length > 0) {
-          detectedCity = rev[0].city || rev[0].subregion || rev[0].region || '';
+        } else {
+          try {
+            const rev = await Location.reverseGeocodeAsync({
+              latitude: fastLoc.latitude,
+              longitude: fastLoc.longitude,
+            });
+            if (rev && rev.length > 0) {
+              detectedCity = rev[0].city || rev[0].subregion || rev[0].region || '';
+            }
+          } catch {
+            // ignore
+          }
         }
       }
 

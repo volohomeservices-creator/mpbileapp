@@ -58,7 +58,7 @@ export default ({ config }: ConfigContext): any => ({
       foregroundImage: './assets/android-icon-foreground.png',
       backgroundImage: './assets/android-icon-background.png',
       monochromeImage: './assets/android-icon-monochrome.png',
-      backgroundColor: '#0F172A',
+      backgroundColor: '#45016e',
     },
     permissions: [
       'ACCESS_FINE_LOCATION',
@@ -104,7 +104,7 @@ export default ({ config }: ConfigContext): any => ({
       {
         image: './assets/splash-icon.png',
         resizeMode: 'contain',
-        backgroundColor: '#0F172A',
+        backgroundColor: '#45016e',
       },
     ],
   ],

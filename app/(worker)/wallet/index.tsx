@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Alert, Platform, Modal, TextInput, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, FlatList, TouchableOpacity, Alert, Platform, Modal, TextInput, ActivityIndicator, BackHandler } from 'react-native';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { useQuery } from '@tanstack/react-query';
@@ -69,6 +69,31 @@ export default function WorkerWalletScreen() {
   const [razorpayModalVisible, setRazorpayModalVisible] = useState(false);
   const [activeRazorpayData, setActiveRazorpayData] = useState<RazorpayPaymentData | null>(null);
   const [pendingTopupAmount, setPendingTopupAmount] = useState<string>('');
+
+  const handleBack = () => {
+    if (razorpayModalVisible) {
+      setRazorpayModalVisible(false);
+      return;
+    }
+    if (isTopUpVisible) {
+      setIsTopUpVisible(false);
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(worker)/home');
+    }
+  };
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [razorpayModalVisible, isTopUpVisible]);
 
   const handleWalletSuccess = async (paymentResponse: RazorpaySuccessResponse) => {
     setRazorpayModalVisible(false);
@@ -226,7 +251,7 @@ export default function WorkerWalletScreen() {
       {/* Header */}
       <View className="px-6 py-4 flex-row items-center border-b border-border-primary bg-white shadow-sm">
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={handleBack}
           activeOpacity={0.8}
           className="w-9 h-9 rounded-xl bg-background-secondary border border-border-primary justify-center items-center mr-3 active:bg-slate-100"
         >

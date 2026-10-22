@@ -11,8 +11,9 @@ import {
   ActivityIndicator,
   StyleSheet,
   Dimensions,
+  BackHandler,
 } from 'react-native';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -107,7 +108,11 @@ export default function LoginScreen() {
         await setAuth(data.token, data.refreshToken, data.user);
 
         if (data.user.role === 'worker') {
-          router.replace('/(worker)/home');
+          if (data.redirectTo === '/worker/kyc' || data.isNewUser) {
+            router.replace('/(worker)/kyc' as any);
+          } else {
+            router.replace('/(worker)/home');
+          }
         } else {
           router.replace('/(customer)/home');
         }
@@ -139,6 +144,17 @@ export default function LoginScreen() {
     setShowPinInput(false);
     setPin('');
   };
+
+  // Intercept Android hardware back button so users can return to phone number input from PIN mode
+  useEffect(() => {
+    if (!showPinInput) return;
+    const onBackPress = () => {
+      resetFlow();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [showPinInput]);
 
   const handleForgotPin = () => {
     const phoneCheck = normalizeIndianPhoneNumber(phone);

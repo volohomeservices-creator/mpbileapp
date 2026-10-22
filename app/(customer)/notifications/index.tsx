@@ -1,4 +1,5 @@
-import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, Alert, BackHandler } from 'react-native';
+import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,6 +14,23 @@ export default function CustomerNotificationsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { t } = useLanguage();
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(customer)/home');
+    }
+  };
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, []);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['notifications'],
@@ -57,7 +75,7 @@ export default function CustomerNotificationsScreen() {
       <View className="px-6 py-4 flex-row justify-between items-center border-b border-slate-100 bg-white">
         <View className="flex-row items-center">
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={handleBack}
             className="w-9 h-9 rounded-full bg-slate-50 justify-center items-center mr-3 active:bg-slate-100"
           >
             <Ionicons name="arrow-back" size={18} color="#1e293b" />

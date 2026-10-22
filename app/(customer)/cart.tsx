@@ -1,7 +1,7 @@
-import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Alert, Platform, BackHandler } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCartStore } from '@/features/cart/cartStore';
 import { useLanguage } from '@/hooks/useLanguage';
@@ -12,7 +12,25 @@ import { apiPost } from '@/api/client';
 
 export default function CartScreen() {
   const router = useRouter();
+  const { from } = useLocalSearchParams<{ from?: string }>();
   const { t } = useLanguage();
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(customer)/home');
+    }
+  };
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, []);
   const { items, removeItem, addItem, deleteItem, clearCart, getTotalCount, getTotalPrice } = useCartStore();
 
   const totalCount = getTotalCount();
@@ -59,8 +77,17 @@ export default function CartScreen() {
       params: { 
         serviceId: primaryItem.id,
         checkout: 'true',
+        from: 'cart',
       },
     } as any);
+  };
+
+  const handleAddMoreServices = () => {
+    if (from === 'catalog' && router.canGoBack()) {
+      router.back();
+    } else {
+      router.push('/(customer)/bookings/create' as any);
+    }
   };
 
   return (
@@ -69,7 +96,7 @@ export default function CartScreen() {
       <View className="px-5 py-4 flex-row items-center justify-between bg-white border-b border-border-primary shadow-xs">
         <View className="flex-row items-center flex-1">
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={handleBack}
             activeOpacity={0.8}
             className="w-9 h-9 rounded-xl bg-background-secondary border border-border-primary justify-center items-center mr-3 active:bg-slate-100"
           >
@@ -112,7 +139,7 @@ export default function CartScreen() {
             label={t('bookings.exploreServices')}
             variant="primary"
             size="md"
-            onPress={() => router.push('/(customer)/bookings/create' as any)}
+            onPress={handleAddMoreServices}
             className="w-full max-w-[260px]"
           />
         </View>
@@ -193,7 +220,7 @@ export default function CartScreen() {
 
             {/* Add more services button */}
             <TouchableOpacity
-              onPress={() => router.push('/(customer)/bookings/create' as any)}
+              onPress={handleAddMoreServices}
               activeOpacity={0.8}
               className="py-3 px-4 rounded-2xl border border-dashed border-[#3C01A7]/40 bg-[#F0EBFB]/50 flex-row items-center justify-center mb-4"
             >

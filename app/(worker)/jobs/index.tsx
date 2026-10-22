@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, ActivityIndicator, TouchableOpacity, Alert, BackHandler } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -16,6 +16,23 @@ export default function WorkerJobsScreen() {
   const queryClient = useQueryClient();
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<'available' | 'history'>('available');
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(worker)/home');
+    }
+  };
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, []);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['worker-jobs-list', activeTab],
@@ -62,7 +79,7 @@ export default function WorkerJobsScreen() {
       {/* Header */}
       <View className="px-6 py-4 border-b border-border-primary bg-white shadow-sm flex-row items-center">
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={handleBack}
           activeOpacity={0.8}
           className="w-9 h-9 rounded-xl bg-background-secondary border border-border-primary justify-center items-center mr-3 active:bg-slate-100"
         >

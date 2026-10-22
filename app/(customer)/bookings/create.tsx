@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Image, TextInput, Platform } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Image, TextInput, Platform, BackHandler, Modal } from 'react-native';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
-import { getServices, createBooking } from '@/api/bookings';
+import { getServices, createBooking, getActiveBanners, getInitialCachedCustomerBanners } from '@/api/bookings';
 import { CreateBookingSchema } from '@volo/shared-types';
 import { getAddresses } from '@/api/profile';
 import { getCustomerWallet } from '@/api/wallet';
@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/Button';
 import { useCartStore } from '@/features/cart/cartStore';
 import { getPublicMediaUrl } from '@/utils/media';
 import { RazorpayModal, RazorpayPaymentData, RazorpaySuccessResponse } from '@/components/RazorpayModal';
+import { getFastCurrentLocation } from '@/utils/fastLocation';
 
 // Platform-resilient showAlert helper supporting callbacks
 const showAlert = (
@@ -159,10 +160,11 @@ async function openRazorpayCheckout(checkout: {
 export default function CreateBookingScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { categoryId, serviceId, checkout } = useLocalSearchParams<{ 
+  const { categoryId, serviceId, checkout, from } = useLocalSearchParams<{ 
     categoryId?: string; 
     serviceId?: string; 
     checkout?: string; 
+    from?: string;
   }>();
   const { t } = useLanguage();
   const {
@@ -175,12 +177,15 @@ export default function CreateBookingScreen() {
     getTotalPrice,
   } = useCartStore();
 
+  const insets = useSafeAreaInsets();
+
   // UI Flow Step State ('catalog' = browsing services, 'checkout' = configure address, payment, notes)
   const [step, setStep] = useState<'catalog' | 'checkout'>('catalog');
 
   // Booking details state
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [address, setAddress] = useState('');
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
   const [paymentMode, setPaymentMode] = useState<'ONLINE' | 'COD' | 'WALLET'>('COD');
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -206,31 +211,99 @@ export default function CreateBookingScreen() {
   const [activeRazorpayData, setActiveRazorpayData] = useState<RazorpayPaymentData | null>(null);
   const [pendingBookingId, setPendingBookingId] = useState<string | null>(null);
 
-  // Fetch Services catalog
+  const handleBack = () => {
+    if (razorpayModalVisible) {
+      setRazorpayModalVisible(false);
+      return;
+    }
+    if (isEditingAddress) {
+      setIsEditingAddress(false);
+      return;
+    }
+    // If the screen was launched directly into checkout (from Cart or Home "Book Now")
+    if (checkout === 'true') {
+      if (from === 'cart' || cartItems.length > 0) {
+        if (router.canGoBack()) {
+          router.back();
+        } else {
+          router.replace('/(customer)/cart');
+        }
+        return;
+      }
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/(customer)/home');
+      }
+      return;
+    }
+    // If the user transitioned in-place from the internal catalog step
+    if (step === 'checkout') {
+      setStep('catalog');
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(customer)/home');
+    }
+  };
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [step, razorpayModalVisible, isEditingAddress]);
+
+  // Fetch Services catalog with 5-minute cache
   const { data, isLoading } = useQuery({
     queryKey: ['customer-services'],
     queryFn: getServices,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
   });
 
-  // Fetch Saved Addresses
+  // Fetch Saved Addresses with 5-minute cache
   const { data: addressesData } = useQuery({
     queryKey: ['customer-addresses'],
     queryFn: getAddresses,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
   });
   const savedAddresses = addressesData?.addresses ?? [];
 
-  // Fetch Wallet details
+  // Fetch Wallet details with 2-minute cache
   const { data: walletData } = useQuery({
     queryKey: ['customer-wallet'],
     queryFn: getCustomerWallet,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
   const walletBalance = Number(walletData?.wallet?.balance ?? 0);
 
-  // Fetch live platform payment method availability
+  // Fetch live platform payment method availability with 10-minute cache
   const { data: paymentConfig } = useQuery({
     queryKey: ['payment-config'],
     queryFn: () => apiGet<any>('/api/public/payment-config'),
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
   });
+
+  // Banners Query for dynamic category & catalog hero image support
+  const { data: bannersData } = useQuery({
+    queryKey: ['customer-active-banners'],
+    queryFn: getActiveBanners,
+    initialData: getInitialCachedCustomerBanners,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+  });
+
+  const heroBanner = bannersData?.banners?.find((b: any) => 
+    b?.placement === 'CATALOG_HERO' || b?.placement === 'ALL_HERO' || b?.placement === 'CUSTOMER_HERO' || b?.placement === 'HERO' || b?.placement === 'ALL'
+  ) || bannersData?.banners?.[0];
 
   // Auto-switch payment mode if currently selected mode is disabled by platform admin
   useEffect(() => {
@@ -252,15 +325,96 @@ export default function CreateBookingScreen() {
   const categories = data?.categories ?? [];
   const allItems: any[] = categories.flatMap((c: any) => c.items ?? []);
   
-  const isAllCategories = !categoryId || categoryId === 'all';
-  const matchedCategory = categories.find((c) => c.id === categoryId);
-  const currentCategory = matchedCategory || (isAllCategories ? { name: 'All Services', id: 'all' } : (categories.length > 0 ? categories[0] : null));
-  
-  // If user selected a specific category, show strictly that category's items (even if empty).
-  // Only show allItems if categoryId is 'all' or not provided.
-  const services = isAllCategories
+  // Normalize categoryId parameter (handles UUID, slug, name, or banner action_urls)
+  const rawParam = typeof categoryId === 'string' ? categoryId.trim() : '';
+  const cleanParam = rawParam
+    .replace(/^.*[?&]categoryId=/, '')
+    .replace(/^.*[?&]category=/, '')
+    .replace(/^\/+/, '')
+    .toLowerCase();
+
+  // Urban Company-style filter & search state
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'popular' | 'price_low' | 'price_high' | 'duration'>('popular');
+  const [priceFilter, setPriceFilter] = useState<'all' | 'under_100' | '100_to_500' | 'above_500'>('all');
+  const [durationFilter, setDurationFilter] = useState<'all' | 'quick' | 'standard'>('all');
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [activeFilterTab, setActiveFilterTab] = useState<'sort' | 'price' | 'duration'>('sort');
+
+  useEffect(() => {
+    if (cleanParam && cleanParam !== 'all' && cleanParam !== 'customer/services' && cleanParam !== '/') {
+      const match = categories.find((c: any) => {
+        const catId = (c.id || '').toLowerCase();
+        const catName = (c.name || '').toLowerCase();
+        const catSlug = (c.slug || '').toLowerCase();
+        return catId === cleanParam || catName === cleanParam || (catSlug && catSlug === cleanParam) || catName.includes(cleanParam);
+      });
+      if (match) {
+        setSelectedCategoryFilter(match.id);
+      } else {
+        setSelectedCategoryFilter('all');
+      }
+    } else {
+      setSelectedCategoryFilter('all');
+    }
+  }, [cleanParam, categories]);
+
+  const isAllFilter = selectedCategoryFilter === 'all';
+  const activeCategory = isAllFilter
+    ? { name: 'All Services', id: 'all', items: allItems }
+    : (categories.find((c: any) => c.id === selectedCategoryFilter) || (categories.length > 0 ? categories[0] : null));
+
+  // Count active applied modifiers (excluding category)
+  const activeFiltersCount = 
+    (sortBy !== 'popular' ? 1 : 0) + 
+    (priceFilter !== 'all' ? 1 : 0) + 
+    (durationFilter !== 'all' ? 1 : 0);
+
+  const resetAllFilters = () => {
+    setSortBy('popular');
+    setPriceFilter('all');
+    setDurationFilter('all');
+    setSearchQuery('');
+  };
+
+  // Urban Company Multi-Stage Filtering & Sorting Pipeline
+  let filteredServices = isAllFilter
     ? allItems
-    : (matchedCategory ? (matchedCategory.items ?? []) : []);
+    : (activeCategory?.items ?? allItems.filter((i: any) => i.category_id === selectedCategoryFilter));
+
+  // 1. Search Query filter
+  if (searchQuery.trim()) {
+    const q = searchQuery.toLowerCase().trim();
+    filteredServices = filteredServices.filter((s: any) =>
+      (s.name || '').toLowerCase().includes(q) ||
+      (s.description || '').toLowerCase().includes(q)
+    );
+  }
+
+  // 2. Price Range filter
+  if (priceFilter === 'under_100') {
+    filteredServices = filteredServices.filter((s: any) => Number(s.base_price) < 100);
+  } else if (priceFilter === '100_to_500') {
+    filteredServices = filteredServices.filter((s: any) => Number(s.base_price) >= 100 && Number(s.base_price) <= 500);
+  } else if (priceFilter === 'above_500') {
+    filteredServices = filteredServices.filter((s: any) => Number(s.base_price) > 500);
+  }
+
+  // 3. Duration filter
+  if (durationFilter === 'quick') {
+    filteredServices = filteredServices.filter((s: any) => Number(s.estimated_mins || 45) <= 45);
+  } else if (durationFilter === 'standard') {
+    filteredServices = filteredServices.filter((s: any) => Number(s.estimated_mins || 45) > 45);
+  }
+
+  // 4. Sort Ordering
+  const services = [...filteredServices].sort((a: any, b: any) => {
+    if (sortBy === 'price_low') return Number(a.base_price) - Number(b.base_price);
+    if (sortBy === 'price_high') return Number(b.base_price) - Number(a.base_price);
+    if (sortBy === 'duration') return Number(a.estimated_mins || 45) - Number(b.estimated_mins || 45);
+    return 0; // Default popularity
+  });
 
   // React to incoming route parameters
   useEffect(() => {
@@ -279,11 +433,12 @@ export default function CreateBookingScreen() {
     }
   }, [step, selectedService, cartItems, allItems]);
 
-  // Auto-fill default saved address if available
+  // Auto-fill default saved address if available (instant 0ms)
   useEffect(() => {
     if (savedAddresses.length > 0 && !address) {
       const defaultAddr = savedAddresses.find((a: any) => a.is_default) || savedAddresses[0];
       if (defaultAddr) {
+        setSelectedAddressId(defaultAddr.id);
         setAddress(defaultAddr.address);
         if (defaultAddr.latitude && defaultAddr.longitude) {
           setCoords({
@@ -293,79 +448,40 @@ export default function CreateBookingScreen() {
         }
       }
     }
-  }, [savedAddresses, address]);
+  }, [savedAddresses]);
 
-  // Get GPS location on mount if not already populated
+  // Fast GPS location resolver using instant cache & timeouts
+  const getLocation = async (forceFresh = false) => {
+    setLocating(true);
+    try {
+      const loc = await getFastCurrentLocation({ forceFresh });
+      if (loc) {
+        setCoords({ lat: loc.latitude, lng: loc.longitude });
+        if (loc.formattedAddress) {
+          setAddress(loc.formattedAddress);
+        } else if (!address) {
+          setAddress(`GPS Location (${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)})`);
+        }
+        setSelectedAddressId(null);
+      } else if (!address) {
+        showAlert('Location Notice', 'Could not lock GPS immediately. You can select a saved address or type your address manually.');
+      }
+    } catch (err) {
+      console.warn('Location detection notice:', err);
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  // Only auto-fetch GPS if user has no saved addresses and no address set
   useEffect(() => {
-    if (!address) {
-      getLocation();
+    if (!address && savedAddresses.length === 0) {
+      getLocation(false);
     }
     if (Platform.OS === 'web') {
       loadRazorpayScript().catch(() => {});
     }
   }, []);
-
-  const getLocation = async () => {
-    setLocating(true);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        showAlert('Permission Denied', 'Location permission allows us to match the closest certified technician.');
-        return;
-      }
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      setCoords({
-        lat: location.coords.latitude,
-        lng: location.coords.longitude,
-      });
-      
-      let formattedAddress = '';
-
-      if (Platform.OS === 'web') {
-        const url = `https://nominatim.openstreetmap.org/reverse?lat=${location.coords.latitude}&lon=${location.coords.longitude}&format=json`;
-        const res = await fetch(url, {
-          headers: {
-            'User-Agent': 'VoloHomeServices/1.0 (contact@volo.com)'
-          }
-        });
-        if (res.ok) {
-          const resData = await res.json();
-          if (resData && resData.address) {
-            const addr = resData.address;
-            formattedAddress = [
-              addr.suburb || addr.neighbourhood || addr.village || addr.road,
-              addr.city || addr.town || addr.county
-            ]
-              .filter(Boolean)
-              .join(', ');
-          }
-        }
-      } else {
-        const geocode = await Location.reverseGeocodeAsync({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
-        if (geocode && geocode.length > 0) {
-          const item = geocode[0];
-          formattedAddress = [
-            item.name,
-            item.street,
-            item.district,
-            item.city,
-            item.postalCode
-          ].filter(Boolean).join(', ');
-        }
-      }
-
-      setAddress(formattedAddress || 'Pinned Location (GPS Locked)');
-    } catch (err) {
-      console.warn('Failed to fetch location automatically:', err);
-    } finally {
-      setLocating(false);
-    }
-  };
 
   // Image Attachment Picker
   const handlePickImage = async () => {
@@ -666,26 +782,40 @@ export default function CreateBookingScreen() {
     return (
       <View className="flex-1 bg-white">
         <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-          {/* Header Image Slider */}
-          <View className="relative h-60 bg-slate-900">
-            {((currentCategory as any)?.icon_url || (currentCategory as any)?.image_url) ? (
-              <Image
-                source={{
-                  uri: getPublicMediaUrl((currentCategory as any)?.icon_url || (currentCategory as any)?.image_url, 'service-images')!,
-                }}
-                className="w-full h-full opacity-90"
-                resizeMode="cover"
-              />
-            ) : (
-              <View className="w-full h-full bg-[#18073E] items-center justify-center">
-                <Ionicons name="sparkles" size={48} color="#A78BFA" />
-              </View>
-            )}
-            <View className="absolute inset-0 bg-black/35" />
+          {/* Header Image Slider (Dynamic Category Image or Hero Banner) */}
+          <View className="relative h-60 bg-[#18073E]">
+            {(() => {
+              const categoryHeroImg = (activeCategory as any)?.icon_url || (activeCategory as any)?.image_url;
+              const heroImageUrl = categoryHeroImg 
+                ? getPublicMediaUrl(categoryHeroImg, 'service-images') 
+                : (heroBanner?.image_url 
+                    ? (getPublicMediaUrl(heroBanner.image_url, 'services') || heroBanner.image_url) 
+                    : 'https://ruavhqfttentcjtmnlct.supabase.co/storage/v1/object/public/services/banners/1791618779063_mobile_banner.webp');
+
+              return (
+                <>
+                  {heroImageUrl ? (
+                    <Image
+                      source={{ uri: heroImageUrl }}
+                      className="w-full h-full opacity-90"
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View className="w-full h-full bg-[#18073E] items-center justify-center">
+                      <Ionicons name="sparkles" size={48} color="#A78BFA" />
+                    </View>
+                  )}
+                  <LinearGradient
+                    colors={['rgba(0,0,0,0.45)', 'rgba(0,0,0,0.1)', 'rgba(0,0,0,0.7)']}
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+                  />
+                </>
+              );
+            })()}
 
             {/* Back Button */}
             <TouchableOpacity
-              onPress={() => router.back()}
+              onPress={handleBack}
               activeOpacity={0.8}
               className="absolute left-6 top-12 w-9 h-9 rounded-full bg-white justify-center items-center shadow-premium border border-border-primary"
             >
@@ -694,7 +824,7 @@ export default function CreateBookingScreen() {
 
             {/* Overlay Cart Button */}
             <TouchableOpacity
-              onPress={() => router.push('/(customer)/cart' as any)}
+              onPress={() => router.push({ pathname: '/(customer)/cart', params: { from: 'catalog' } } as any)}
               activeOpacity={0.8}
               className="absolute right-6 top-12 w-9 h-9 rounded-full bg-white justify-center items-center shadow-premium border border-border-primary"
             >
@@ -710,7 +840,7 @@ export default function CreateBookingScreen() {
           {/* Service Info Block */}
           <View className="px-6 py-5 border-b border-border-primary bg-white">
             <View className="flex-row justify-between items-center mb-1.5">
-              <Text className="text-text-primary text-xl font-extrabold">{currentCategory?.name || t('bookings.bookService')}</Text>
+              <Text className="text-text-primary text-xl font-extrabold capitalize">{activeCategory?.name || t('bookings.bookService')}</Text>
               <Badge label={t('bookings.vSafe')} variant="brand" />
             </View>
 
@@ -718,15 +848,15 @@ export default function CreateBookingScreen() {
               <View className="flex-row items-center">
                 <Ionicons name="star" size={14} color="#FF9F2E" />
                 <Text className="text-text-primary text-xs font-bold ml-1">
-                  {(currentCategory as any)?.average_rating ?? '4.8'}
+                  {(activeCategory as any)?.average_rating ?? '4.8'}
                 </Text>
                 <Text className="text-text-muted text-xs font-medium ml-1">
-                  ({(currentCategory as any)?.total_reviews ?? '5'} reviews)
+                  ({(activeCategory as any)?.total_reviews ?? '5'} reviews)
                 </Text>
               </View>
               <View className="w-1 h-1 rounded-full bg-border-secondary" />
               <Text className="text-text-secondary text-xs font-medium">
-                {(currentCategory as any)?.total_bookings ?? '12'} bookings this week
+                {(activeCategory as any)?.total_bookings ?? '12'} bookings this week
               </Text>
             </View>
 
@@ -740,17 +870,242 @@ export default function CreateBookingScreen() {
             </View>
           </View>
 
+          {/* Urban Company Style Search Bar */}
+          <View className="px-5 py-3 bg-white border-b border-border-primary/40">
+            <View className="flex-row items-center bg-[#F8F7FC] border border-border-secondary rounded-2xl px-3.5 py-2">
+              <Ionicons name="search" size={16} color="#3C01A7" style={{ marginRight: 8 }} />
+              <TextInput
+                placeholder="Search services (e.g. repair, switch, tap...)"
+                placeholderTextColor="#8E84B0"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                className="flex-1 text-xs font-semibold text-text-primary p-0"
+                style={{ height: 22 }}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="close-circle" size={16} color="#8E84B0" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {/* Urban Company Style Horizontal Category Filter Bar */}
+          <View className="bg-white py-2.5 border-b border-border-primary/40 shadow-xs">
+            <View className="px-5 mb-1.5 flex-row justify-between items-center">
+              <Text className="text-text-muted text-[10px] font-black uppercase tracking-wider">
+                Categories
+              </Text>
+              <Text className="text-[#3C01A7] text-[10px] font-bold">
+                {services.length} {services.length === 1 ? 'service' : 'services'} available
+              </Text>
+            </View>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false} 
+              className="px-5 flex-row"
+              contentContainerStyle={{ paddingRight: 24 }}
+            >
+              {/* "All" Filter Tab */}
+              <TouchableOpacity
+                onPress={() => setSelectedCategoryFilter('all')}
+                activeOpacity={0.8}
+                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${
+                  selectedCategoryFilter === 'all'
+                    ? 'bg-[#3C01A7] border-[#3C01A7]'
+                    : 'bg-[#F8F7FC] border-border-secondary'
+                }`}
+              >
+                <Ionicons 
+                  name="grid" 
+                  size={11} 
+                  color={selectedCategoryFilter === 'all' ? '#FFFFFF' : '#3C01A7'} 
+                  style={{ marginRight: 4 }} 
+                />
+                <Text className={`text-xs font-black capitalize ${
+                  selectedCategoryFilter === 'all' ? 'text-white' : 'text-text-primary'
+                }`}>
+                  All ({allItems.length})
+                </Text>
+              </TouchableOpacity>
+
+              {/* Individual Category Filter Tabs */}
+              {categories.map((cat: any) => {
+                const isSelected = selectedCategoryFilter === cat.id;
+                const count = cat.items?.length || 0;
+                return (
+                  <TouchableOpacity
+                    key={cat.id}
+                    onPress={() => setSelectedCategoryFilter(cat.id)}
+                    activeOpacity={0.8}
+                    className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${
+                      isSelected
+                        ? 'bg-[#3C01A7] border-[#3C01A7]'
+                        : 'bg-[#F8F7FC] border-border-secondary'
+                    }`}
+                  >
+                    <Text className={`text-xs font-black capitalize ${
+                      isSelected ? 'text-white' : 'text-text-primary'
+                    }`}>
+                      {cat.name} ({count})
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          {/* Urban Company Quick Filters & Sort Strip */}
+          <View className="bg-white py-2 border-b border-border-primary/60">
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              className="px-5 flex-row"
+              contentContainerStyle={{ paddingRight: 24, alignItems: 'center' }}
+            >
+              {/* Filter Sheet Modal Opener */}
+              <TouchableOpacity
+                onPress={() => setIsFilterModalOpen(true)}
+                activeOpacity={0.8}
+                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${
+                  activeFiltersCount > 0
+                    ? 'bg-[#3C01A7] border-[#3C01A7]'
+                    : 'bg-[#F8F7FC] border-border-secondary'
+                }`}
+              >
+                <Ionicons 
+                  name="options-outline" 
+                  size={13} 
+                  color={activeFiltersCount > 0 ? '#FFFFFF' : '#3C01A7'} 
+                  style={{ marginRight: 4 }} 
+                />
+                <Text className={`text-[11px] font-black ${
+                  activeFiltersCount > 0 ? 'text-white' : 'text-text-primary'
+                }`}>
+                  Filters {activeFiltersCount > 0 ? `(${activeFiltersCount})` : ''}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Sort Pill */}
+              <TouchableOpacity
+                onPress={() => {
+                  setActiveFilterTab('sort');
+                  setIsFilterModalOpen(true);
+                }}
+                activeOpacity={0.8}
+                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${
+                  sortBy !== 'popular'
+                    ? 'bg-[#3C01A7] border-[#3C01A7]'
+                    : 'bg-[#F8F7FC] border-border-secondary'
+                }`}
+              >
+                <Ionicons 
+                  name="swap-vertical" 
+                  size={12} 
+                  color={sortBy !== 'popular' ? '#FFFFFF' : '#64748B'} 
+                  style={{ marginRight: 4 }} 
+                />
+                <Text className={`text-[11px] font-black ${
+                  sortBy !== 'popular' ? 'text-white' : 'text-text-primary'
+                }`}>
+                  {sortBy === 'price_low' 
+                    ? 'Price: Low' 
+                    : sortBy === 'price_high' 
+                    ? 'Price: High' 
+                    : sortBy === 'duration' 
+                    ? 'Fastest' 
+                    : 'Sort'}
+                </Text>
+                <Ionicons 
+                  name="chevron-down" 
+                  size={11} 
+                  color={sortBy !== 'popular' ? '#FFFFFF' : '#94A3B8'} 
+                  style={{ marginLeft: 3 }} 
+                />
+              </TouchableOpacity>
+
+              {/* Quick Pill: Under ₹100 */}
+              <TouchableOpacity
+                onPress={() => setPriceFilter(priceFilter === 'under_100' ? 'all' : 'under_100')}
+                activeOpacity={0.8}
+                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${
+                  priceFilter === 'under_100'
+                    ? 'bg-[#3C01A7] border-[#3C01A7]'
+                    : 'bg-[#F8F7FC] border-border-secondary'
+                }`}
+              >
+                <Text className={`text-[11px] font-black ${
+                  priceFilter === 'under_100' ? 'text-white' : 'text-text-primary'
+                }`}>
+                  Under ₹100
+                </Text>
+              </TouchableOpacity>
+
+              {/* Quick Pill: ₹100 - ₹500 */}
+              <TouchableOpacity
+                onPress={() => setPriceFilter(priceFilter === '100_to_500' ? 'all' : '100_to_500')}
+                activeOpacity={0.8}
+                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${
+                  priceFilter === '100_to_500'
+                    ? 'bg-[#3C01A7] border-[#3C01A7]'
+                    : 'bg-[#F8F7FC] border-border-secondary'
+                }`}
+              >
+                <Text className={`text-[11px] font-black ${
+                  priceFilter === '100_to_500' ? 'text-white' : 'text-text-primary'
+                }`}>
+                  ₹100 - ₹500
+                </Text>
+              </TouchableOpacity>
+
+              {/* Quick Pill: Express (<=45m) */}
+              <TouchableOpacity
+                onPress={() => setDurationFilter(durationFilter === 'quick' ? 'all' : 'quick')}
+                activeOpacity={0.8}
+                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${
+                  durationFilter === 'quick'
+                    ? 'bg-[#3C01A7] border-[#3C01A7]'
+                    : 'bg-[#F8F7FC] border-border-secondary'
+                }`}
+              >
+                <Ionicons 
+                  name="flash" 
+                  size={11} 
+                  color={durationFilter === 'quick' ? '#FFFFFF' : '#FF9F2E'} 
+                  style={{ marginRight: 3 }} 
+                />
+                <Text className={`text-[11px] font-black ${
+                  durationFilter === 'quick' ? 'text-white' : 'text-text-primary'
+                }`}>
+                  Express (≤45m)
+                </Text>
+              </TouchableOpacity>
+
+              {/* Clear All Pill (when active) */}
+              {(activeFiltersCount > 0 || searchQuery.length > 0) && (
+                <TouchableOpacity
+                  onPress={resetAllFilters}
+                  activeOpacity={0.8}
+                  className="mr-2 px-2.5 py-1.5 rounded-xl border border-rose-200 bg-rose-50 flex-row items-center shadow-xs"
+                >
+                  <Ionicons name="close-circle" size={12} color="#E11D48" style={{ marginRight: 3 }} />
+                  <Text className="text-[11px] font-black text-rose-600">Reset</Text>
+                </TouchableOpacity>
+              )}
+            </ScrollView>
+          </View>
+
           {/* User Guide Tip */}
-          <View className="mx-6 my-3.5 p-3.5 bg-[#F4EFFE] rounded-2xl border border-[#3C01A7]/15 flex-row items-center">
-            <Ionicons name="information-circle" size={18} color="#3C01A7" style={{ marginRight: 10 }} />
-            <Text className="text-[#3C01A7] text-xs font-semibold flex-1 leading-4">
-              Tap any service or tap <Text className="font-extrabold">"Book Now"</Text> to configure address, notes & payment mode.
+          <View className="mx-5 my-2.5 p-2.5 bg-[#F4EFFE] rounded-2xl border border-[#3C01A7]/15 flex-row items-center">
+            <Ionicons name="information-circle" size={15} color="#3C01A7" style={{ marginRight: 8 }} />
+            <Text className="text-[#3C01A7] text-[11px] font-semibold flex-1 leading-4">
+              Tap <Text className="font-extrabold">"+ Add"</Text> to place items in cart, or tap card to book directly.
             </Text>
           </View>
 
-          {/* Services list */}
-          <View className="px-5 pb-5 bg-background-secondary mb-24">
-            <View className="flex-row items-center justify-between mb-3.5 px-1">
+          {/* Services 2-Column Grid (Urban Company Style) */}
+          <View className="px-4 pb-6 bg-[#F8F7FC] mb-24">
+            <View className="flex-row items-center justify-between mb-3 px-1">
               <Text className="text-text-secondary text-xs font-black uppercase tracking-wider">
                 {t('bookings.chooseOptions')} ({services.length})
               </Text>
@@ -758,6 +1113,7 @@ export default function CreateBookingScreen() {
                 Best Prices Guaranteed
               </Text>
             </View>
+
             {services.length === 0 ? (
               <View className="bg-white rounded-3xl p-8 items-center border border-border-primary shadow-xs my-2">
                 <View className="w-16 h-16 rounded-2xl bg-[#F0EBFB] items-center justify-center mb-3.5 border border-purple-100">
@@ -767,36 +1123,45 @@ export default function CreateBookingScreen() {
                   No Services Available
                 </Text>
                 <Text className="text-text-secondary text-xs text-center mb-5 max-w-[260px] leading-relaxed">
-                  There are currently no active services listed under {currentCategory?.name || 'this category'}.
+                  {searchQuery || activeFiltersCount > 0
+                    ? `No services match your active filters or search "${searchQuery}".`
+                    : 'There are currently no active services listed under this category.'}
                 </Text>
                 <TouchableOpacity
-                  onPress={() => router.replace('/(customer)/bookings/create?categoryId=all')}
+                  onPress={() => {
+                    setSelectedCategoryFilter('all');
+                    resetAllFilters();
+                  }}
                   activeOpacity={0.85}
                   style={{ backgroundColor: '#3C01A7' }}
                   className="px-5 py-2.5 rounded-xl shadow-xs flex-row items-center"
                 >
-                  <Text className="text-white text-xs font-black mr-1.5">View All Available Services</Text>
-                  <Ionicons name="arrow-forward" size={13} color="#FFFFFF" />
+                  <Text className="text-white text-xs font-black mr-1.5">Reset All Filters</Text>
+                  <Ionicons name="refresh" size={13} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
             ) : (
-              services.map((item: any) => {
-                const cartQty = getItemQuantity(item.id);
-                const serviceImg = getPublicMediaUrl(item.icon_url || item.image_url, 'service-images');
-                return (
-                  <View
-                    key={item.id}
-                    className="mb-4 bg-white rounded-3xl border border-border-primary/80 shadow-xs overflow-hidden"
-                    style={{
-                      shadowColor: '#18073E',
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.04,
-                      shadowRadius: 6,
-                      elevation: 1,
-                    }}
-                  >
-                    {/* Full-width Service Cover Image */}
-                    {serviceImg ? (
+              <View className="flex-row flex-wrap justify-between">
+                {services.map((item: any) => {
+                  const cartQty = getItemQuantity(item.id);
+                  const serviceImg = getPublicMediaUrl(item.icon_url || item.image_url, 'service-images');
+                  const cleanDesc = (item.description || '').replace(/^[,\s.-]+/, '').trim();
+                  const itemCat = categories.find((c: any) => c.id === item.category_id);
+                  const itemCatName = item.category_name || itemCat?.name || (activeCategory?.id !== 'all' ? activeCategory?.name : null);
+
+                  return (
+                    <View
+                      key={item.id}
+                      className="w-[48.5%] mb-3.5 bg-white rounded-2xl border border-border-primary/80 shadow-xs overflow-hidden flex-col justify-between"
+                      style={{
+                        shadowColor: '#18073E',
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.05,
+                        shadowRadius: 5,
+                        elevation: 2,
+                      }}
+                    >
+                      {/* Top: Service Cover Image with Duration Tag */}
                       <TouchableOpacity
                         activeOpacity={0.9}
                         onPress={() => {
@@ -809,125 +1174,40 @@ export default function CreateBookingScreen() {
                               base_price: Number(item.base_price),
                               estimated_mins: item.estimated_mins,
                               category_id: item.category_id,
-                              category_name: currentCategory?.name,
+                              category_name: itemCatName,
                             });
                           }
                           setStep('checkout');
                         }}
-                        className="w-full h-40 bg-[#F0EBFB] relative overflow-hidden"
+                        className="w-full h-28 bg-[#F0EBFB] relative overflow-hidden"
                       >
-                        <Image
-                          source={{ uri: serviceImg }}
-                          className="w-full h-full"
-                          resizeMode="cover"
-                        />
-                        <LinearGradient
-                          colors={['transparent', 'rgba(0,0,0,0.3)']}
-                          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 40 }}
-                        />
-                      </TouchableOpacity>
-                    ) : null}
-
-                    {/* Service Content & Details */}
-                    <View className="p-4">
-                      <TouchableOpacity
-                        activeOpacity={0.85}
-                        onPress={() => {
-                          setSelectedService(item.id);
-                          if (cartQty === 0) {
-                            addItem({
-                              id: item.id,
-                              name: item.name,
-                              description: item.description,
-                              base_price: Number(item.base_price),
-                              estimated_mins: item.estimated_mins,
-                              category_id: item.category_id,
-                              category_name: currentCategory?.name,
-                            });
-                          }
-                          setStep('checkout');
-                        }}
-                      >
-                        <Text className="text-text-primary text-base font-extrabold leading-snug mb-1" numberOfLines={2}>
-                          {item.name}
-                        </Text>
-                        {item.description ? (
-                          <Text className="text-text-secondary text-xs leading-4 mb-2" numberOfLines={2}>
-                            {item.description}
-                          </Text>
-                        ) : null}
-                        <View className="flex-row items-center gap-2">
-                          <View className="flex-row items-center bg-[#F8F6FD] px-2.5 py-0.5 rounded-lg border border-purple-100 self-start">
-                            <Ionicons name="time-outline" size={12} color="#6B21A8" />
-                            <Text className="text-[#6B21A8] text-[11px] font-bold ml-1">
-                              {item.estimated_mins || 45} mins
-                            </Text>
+                        {serviceImg ? (
+                          <Image
+                            source={{ uri: serviceImg }}
+                            className="w-full h-full"
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View className="w-full h-full items-center justify-center bg-[#F0EBFB]">
+                            <Ionicons name="construct-outline" size={28} color="#3C01A7" />
                           </View>
+                        )}
+                        <LinearGradient
+                          colors={['transparent', 'rgba(0,0,0,0.45)']}
+                          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 32 }}
+                        />
+                        <View className="absolute bottom-1.5 left-2 bg-black/60 px-1.5 py-0.5 rounded-md flex-row items-center">
+                          <Ionicons name="time-outline" size={10} color="#FFFFFF" />
+                          <Text className="text-white text-[9px] font-bold ml-1">
+                            {item.estimated_mins || 45}m
+                          </Text>
                         </View>
                       </TouchableOpacity>
 
-                      {/* Subtle Divider */}
-                      <View className="h-px bg-[#F1EDF9] my-3.5" />
-                    </View>
-
-                    {/* Bottom Row: Price & Actions */}
-                    <View className="flex-row items-center justify-between">
-                      <View>
-                        <Text className="text-text-muted text-[10px] font-bold uppercase tracking-wider">Price</Text>
-                        <Text className="text-text-primary text-lg font-black tracking-tight">₹{item.base_price}</Text>
-                      </View>
-
-                      <View className="flex-row items-center gap-2">
-                        {/* Add to Cart Stepper / Button */}
-                        {cartQty > 0 ? (
-                          <View className="flex-row items-center border border-[#3C01A7] bg-[#F0EBFB] rounded-xl px-2 py-1.5 shadow-xs">
-                            <TouchableOpacity
-                              onPress={() => removeItem(item.id)}
-                              activeOpacity={0.7}
-                              className="w-6 h-6 rounded-lg bg-white justify-center items-center shadow-xs"
-                            >
-                              <Ionicons name="remove" size={13} color="#3C01A7" />
-                            </TouchableOpacity>
-                            <Text className="text-[#3C01A7] text-xs font-black px-2.5 min-w-[22px] text-center">{cartQty}</Text>
-                            <TouchableOpacity
-                              onPress={() => addItem({
-                                id: item.id,
-                                name: item.name,
-                                description: item.description,
-                                base_price: Number(item.base_price),
-                                estimated_mins: item.estimated_mins,
-                                category_id: item.category_id,
-                                category_name: currentCategory?.name,
-                              })}
-                              activeOpacity={0.7}
-                              className="w-6 h-6 rounded-lg bg-[#3C01A7] justify-center items-center shadow-xs"
-                            >
-                              <Ionicons name="add" size={13} color="#FFFFFF" />
-                            </TouchableOpacity>
-                          </View>
-                        ) : (
-                          <TouchableOpacity
-                            onPress={() => {
-                              addItem({
-                                id: item.id,
-                                name: item.name,
-                                description: item.description,
-                                base_price: Number(item.base_price),
-                                estimated_mins: item.estimated_mins,
-                                category_id: item.category_id,
-                                category_name: currentCategory?.name,
-                              });
-                            }}
-                            activeOpacity={0.8}
-                            className="flex-row items-center border border-[#3C01A7] bg-[#F0EBFB] rounded-xl px-3 py-2 active:bg-[#3C01A7]/20 shadow-xs"
-                          >
-                            <Ionicons name="cart-outline" size={13} color="#3C01A7" style={{ marginRight: 4 }} />
-                            <Text className="text-[#3C01A7] text-xs font-black">+ Cart</Text>
-                          </TouchableOpacity>
-                        )}
-
-                        {/* Instant Book Now Button */}
+                      {/* Middle: Category Tag, Title & Brief Description */}
+                      <View className="p-2.5 flex-1 justify-between">
                         <TouchableOpacity
+                          activeOpacity={0.85}
                           onPress={() => {
                             setSelectedService(item.id);
                             if (cartQty === 0) {
@@ -938,60 +1218,352 @@ export default function CreateBookingScreen() {
                                 base_price: Number(item.base_price),
                                 estimated_mins: item.estimated_mins,
                                 category_id: item.category_id,
-                                category_name: currentCategory?.name,
+                                category_name: itemCatName,
                               });
                             }
                             setStep('checkout');
                           }}
-                          activeOpacity={0.85}
-                          style={{ backgroundColor: '#3C01A7' }}
-                          className="flex-row items-center px-4 py-2 rounded-xl shadow-xs"
                         >
-                          <Text className="text-white text-xs font-black mr-1">Book Now</Text>
-                          <Ionicons name="arrow-forward" size={13} color="#FFFFFF" />
+                          {itemCatName ? (
+                            <View className="mb-1 self-start">
+                              <Text 
+                                className="text-[9px] font-black uppercase tracking-wider text-[#3C01A7] bg-[#F0EBFB] px-1.5 py-0.5 rounded-md" 
+                                numberOfLines={1}
+                              >
+                                {itemCatName}
+                              </Text>
+                            </View>
+                          ) : null}
+                          <Text className="text-text-primary text-xs font-black leading-tight mb-1" numberOfLines={2}>
+                            {item.name}
+                          </Text>
+                          {cleanDesc ? (
+                            <Text className="text-text-muted text-[10px] leading-3 mb-2" numberOfLines={1}>
+                              {cleanDesc}
+                            </Text>
+                          ) : null}
                         </TouchableOpacity>
+
+                        {/* Bottom Row: Price & Add / Stepper */}
+                        <View className="pt-2 border-t border-slate-100 flex-row items-center justify-between mt-auto">
+                          <Text className="text-[#1E1535] text-sm font-black">
+                            ₹{item.base_price}
+                          </Text>
+
+                          {cartQty > 0 ? (
+                            <View className="flex-row items-center border border-[#3C01A7] bg-[#F0EBFB] rounded-lg px-1.5 py-1">
+                              <TouchableOpacity
+                                onPress={() => removeItem(item.id)}
+                                activeOpacity={0.7}
+                                className="w-5 h-5 rounded bg-white justify-center items-center shadow-xs"
+                              >
+                                <Ionicons name="remove" size={11} color="#3C01A7" />
+                              </TouchableOpacity>
+                              <Text className="text-[#3C01A7] text-[11px] font-black px-1.5 min-w-[16px] text-center">
+                                {cartQty}
+                              </Text>
+                              <TouchableOpacity
+                                onPress={() => addItem({
+                                  id: item.id,
+                                  name: item.name,
+                                  description: item.description,
+                                  base_price: Number(item.base_price),
+                                  estimated_mins: item.estimated_mins,
+                                  category_id: item.category_id,
+                                  category_name: itemCatName,
+                                })}
+                                activeOpacity={0.7}
+                                className="w-5 h-5 rounded bg-[#3C01A7] justify-center items-center shadow-xs"
+                              >
+                                <Ionicons name="add" size={11} color="#FFFFFF" />
+                              </TouchableOpacity>
+                            </View>
+                          ) : (
+                            <TouchableOpacity
+                              onPress={() => {
+                                addItem({
+                                  id: item.id,
+                                  name: item.name,
+                                  description: item.description,
+                                  base_price: Number(item.base_price),
+                                  estimated_mins: item.estimated_mins,
+                                  category_id: item.category_id,
+                                  category_name: itemCatName,
+                                });
+                              }}
+                              activeOpacity={0.8}
+                              className="flex-row items-center border border-[#3C01A7] bg-[#F0EBFB] rounded-lg px-2.5 py-1 active:bg-[#3C01A7]/20 shadow-xs"
+                            >
+                              <Ionicons name="add" size={12} color="#3C01A7" style={{ marginRight: 2 }} />
+                              <Text className="text-[#3C01A7] text-[11px] font-black">Add</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
                       </View>
                     </View>
-                  </View>
-                );
-              })
+                  );
+                })}
+              </View>
             )}
           </View>
         </ScrollView>
 
-        {/* Floating bottom checkout bar */}
+        {/* Floating bottom checkout bar (Modernized, Safe-Area aware, No text truncation) */}
         {getTotalCount() > 0 ? (
-          <View className="absolute bottom-0 left-0 right-0 bg-white border-t border-border-primary px-5 py-3.5 flex-row justify-between items-center shadow-premium">
-            <View>
+          <View 
+            className="absolute bottom-0 left-0 right-0 bg-white border-t border-border-primary px-4 pt-3 flex-row justify-between items-center shadow-premium"
+            style={{ paddingBottom: Math.max(insets.bottom, 12) }}
+          >
+            <TouchableOpacity 
+              activeOpacity={0.85}
+              onPress={() => router.push({ pathname: '/(customer)/cart', params: { from: 'catalog' } } as any)}
+              className="flex-1 mr-3"
+            >
               <Text className="text-text-muted text-[10px] font-bold uppercase tracking-wider">
                 {getTotalCount()} {getTotalCount() === 1 ? t('bookings.itemInCart') : t('bookings.itemsInCart')}
               </Text>
-              <Text className="text-[#3C01A7] text-lg font-black">₹{getTotalPrice()}</Text>
-            </View>
-            <View className="flex-row gap-2">
+              <View className="flex-row items-baseline gap-1.5">
+                <Text className="text-[#3C01A7] text-xl font-black">₹{getTotalPrice()}</Text>
+                <Text className="text-[#3C01A7] text-[11px] font-extrabold">View Cart ›</Text>
+              </View>
+            </TouchableOpacity>
+
+            <View className="flex-row items-center gap-2">
               <TouchableOpacity
-                onPress={() => router.push('/(customer)/cart' as any)}
+                onPress={() => router.push({ pathname: '/(customer)/cart', params: { from: 'catalog' } } as any)}
                 activeOpacity={0.85}
-                className="px-4 py-2.5 rounded-xl border border-[#3C01A7] bg-[#F0EBFB] flex-row items-center"
+                className="px-3.5 py-2.5 rounded-xl border border-[#3C01A7]/30 bg-[#F0EBFB] flex-row items-center active:bg-[#3C01A7]/15"
               >
-                <Ionicons name="cart-outline" size={16} color="#3C01A7" style={{ marginRight: 4 }} />
-                <Text className="text-[#3C01A7] text-xs font-extrabold">{t('bookings.viewCart')}</Text>
+                <Ionicons name="cart" size={15} color="#3C01A7" style={{ marginRight: 4 }} />
+                <Text className="text-[#3C01A7] text-xs font-black">Cart</Text>
               </TouchableOpacity>
-              <Button
-                label={t('bookings.proceedToCheckout')}
-                variant="primary"
-                size="md"
+
+              <TouchableOpacity
                 onPress={() => {
                   if (!selectedService && cartItems.length > 0) {
                     setSelectedService(cartItems[0].id);
                   }
                   setStep('checkout');
                 }}
-                className="px-4"
-              />
+                activeOpacity={0.85}
+                style={{ backgroundColor: '#3C01A7' }}
+                className="px-4 py-2.5 rounded-xl flex-row items-center shadow-md active:bg-[#2A0078]"
+              >
+                <Text className="text-white text-xs font-black mr-1.5">Checkout</Text>
+                <Ionicons name="arrow-forward" size={13} color="#FFFFFF" />
+              </TouchableOpacity>
             </View>
           </View>
         ) : null}
+
+        {/* Urban Company Slide-Up Bottom Sheet Filter & Sort Modal */}
+        <Modal
+          visible={isFilterModalOpen}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setIsFilterModalOpen(false)}
+        >
+          <View className="flex-1 bg-black/60 justify-end">
+            <TouchableOpacity 
+              className="flex-1" 
+              activeOpacity={1} 
+              onPress={() => setIsFilterModalOpen(false)} 
+            />
+            <View 
+              className="bg-white rounded-t-3xl overflow-hidden max-h-[82%]"
+              style={{ paddingBottom: Math.max(insets.bottom, 16) }}
+            >
+              {/* Modal Header */}
+              <View className="px-5 py-4 border-b border-border-primary flex-row justify-between items-center bg-white">
+                <View className="flex-row items-center">
+                  <Ionicons name="options" size={20} color="#3C01A7" style={{ marginRight: 8 }} />
+                  <Text className="text-base font-black text-text-primary">Filters & Sorting</Text>
+                </View>
+                <View className="flex-row items-center gap-3">
+                  {activeFiltersCount > 0 && (
+                    <TouchableOpacity onPress={resetAllFilters} activeOpacity={0.7}>
+                      <Text className="text-xs font-bold text-rose-600">Clear All</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    onPress={() => setIsFilterModalOpen(false)}
+                    activeOpacity={0.7}
+                    className="w-8 h-8 rounded-full bg-background-secondary items-center justify-center border border-border-primary"
+                  >
+                    <Ionicons name="close" size={18} color="#1E1535" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Urban Company 2-Column Filter Body */}
+              <View className="flex-row" style={{ minHeight: 280, maxHeight: 380 }}>
+                {/* Left Column: Filter Categories */}
+                <View className="w-[36%] bg-[#F8F7FC] border-r border-border-primary py-2">
+                  <TouchableOpacity
+                    onPress={() => setActiveFilterTab('sort')}
+                    className={`px-4 py-3.5 flex-row items-center justify-between border-l-4 ${
+                      activeFilterTab === 'sort'
+                        ? 'bg-white border-[#3C01A7]'
+                        : 'border-transparent'
+                    }`}
+                  >
+                    <Text className={`text-xs ${activeFilterTab === 'sort' ? 'font-black text-[#3C01A7]' : 'font-bold text-text-secondary'}`}>
+                      Sort By
+                    </Text>
+                    {sortBy !== 'popular' && (
+                      <View className="w-2 h-2 rounded-full bg-[#3C01A7]" />
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => setActiveFilterTab('price')}
+                    className={`px-4 py-3.5 flex-row items-center justify-between border-l-4 ${
+                      activeFilterTab === 'price'
+                        ? 'bg-white border-[#3C01A7]'
+                        : 'border-transparent'
+                    }`}
+                  >
+                    <Text className={`text-xs ${activeFilterTab === 'price' ? 'font-black text-[#3C01A7]' : 'font-bold text-text-secondary'}`}>
+                      Price
+                    </Text>
+                    {priceFilter !== 'all' && (
+                      <View className="w-2 h-2 rounded-full bg-[#3C01A7]" />
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => setActiveFilterTab('duration')}
+                    className={`px-4 py-3.5 flex-row items-center justify-between border-l-4 ${
+                      activeFilterTab === 'duration'
+                        ? 'bg-white border-[#3C01A7]'
+                        : 'border-transparent'
+                    }`}
+                  >
+                    <Text className={`text-xs ${activeFilterTab === 'duration' ? 'font-black text-[#3C01A7]' : 'font-bold text-text-secondary'}`}>
+                      Duration
+                    </Text>
+                    {durationFilter !== 'all' && (
+                      <View className="w-2 h-2 rounded-full bg-[#3C01A7]" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                {/* Right Column: Tab Options */}
+                <ScrollView className="flex-1 bg-white px-4 py-3" showsVerticalScrollIndicator={false}>
+                  {activeFilterTab === 'sort' && (
+                    <View className="py-1">
+                      {[
+                        { label: 'Recommended / Popular', value: 'popular', desc: 'Highest rated and most booked' },
+                        { label: 'Price: Low to High', value: 'price_low', desc: 'Budget friendly first' },
+                        { label: 'Price: High to Low', value: 'price_high', desc: 'Premium services first' },
+                        { label: 'Fastest Duration', value: 'duration', desc: 'Quickest completion time' },
+                      ].map((opt) => (
+                        <TouchableOpacity
+                          key={opt.value}
+                          onPress={() => setSortBy(opt.value as any)}
+                          activeOpacity={0.8}
+                          className="py-3 border-b border-border-primary/40 flex-row items-center justify-between"
+                        >
+                          <View className="flex-1 mr-3">
+                            <Text className={`text-xs ${sortBy === opt.value ? 'font-black text-[#3C01A7]' : 'font-semibold text-text-primary'}`}>
+                              {opt.label}
+                            </Text>
+                            <Text className="text-[10px] text-text-muted mt-0.5">{opt.desc}</Text>
+                          </View>
+                          <View className={`w-5 h-5 rounded-full border items-center justify-center ${
+                            sortBy === opt.value ? 'border-[#3C01A7] bg-[#3C01A7]' : 'border-slate-300'
+                          }`}>
+                            {sortBy === opt.value && <View className="w-2 h-2 rounded-full bg-white" />}
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+
+                  {activeFilterTab === 'price' && (
+                    <View className="py-1">
+                      {[
+                        { label: 'All Prices', value: 'all', desc: 'Show all service pricing tiers' },
+                        { label: 'Under ₹100', value: 'under_100', desc: 'Affordable quick fixes & inspections' },
+                        { label: '₹100 - ₹500', value: '100_to_500', desc: 'Standard installations & repairs' },
+                        { label: 'Above ₹500', value: 'above_500', desc: 'Comprehensive package services' },
+                      ].map((opt) => (
+                        <TouchableOpacity
+                          key={opt.value}
+                          onPress={() => setPriceFilter(opt.value as any)}
+                          activeOpacity={0.8}
+                          className="py-3 border-b border-border-primary/40 flex-row items-center justify-between"
+                        >
+                          <View className="flex-1 mr-3">
+                            <Text className={`text-xs ${priceFilter === opt.value ? 'font-black text-[#3C01A7]' : 'font-semibold text-text-primary'}`}>
+                              {opt.label}
+                            </Text>
+                            <Text className="text-[10px] text-text-muted mt-0.5">{opt.desc}</Text>
+                          </View>
+                          <View className={`w-5 h-5 rounded-full border items-center justify-center ${
+                            priceFilter === opt.value ? 'border-[#3C01A7] bg-[#3C01A7]' : 'border-slate-300'
+                          }`}>
+                            {priceFilter === opt.value && <View className="w-2 h-2 rounded-full bg-white" />}
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+
+                  {activeFilterTab === 'duration' && (
+                    <View className="py-1">
+                      {[
+                        { label: 'All Durations', value: 'all', desc: 'Show all service turnaround times' },
+                        { label: 'Express (≤ 45 mins)', value: 'quick', desc: 'Fast, quick-turnaround services' },
+                        { label: 'Standard (> 45 mins)', value: 'standard', desc: 'Detailed, comprehensive sessions' },
+                      ].map((opt) => (
+                        <TouchableOpacity
+                          key={opt.value}
+                          onPress={() => setDurationFilter(opt.value as any)}
+                          activeOpacity={0.8}
+                          className="py-3 border-b border-border-primary/40 flex-row items-center justify-between"
+                        >
+                          <View className="flex-1 mr-3">
+                            <Text className={`text-xs ${durationFilter === opt.value ? 'font-black text-[#3C01A7]' : 'font-semibold text-text-primary'}`}>
+                              {opt.label}
+                            </Text>
+                            <Text className="text-[10px] text-text-muted mt-0.5">{opt.desc}</Text>
+                          </View>
+                          <View className={`w-5 h-5 rounded-full border items-center justify-center ${
+                            durationFilter === opt.value ? 'border-[#3C01A7] bg-[#3C01A7]' : 'border-slate-300'
+                          }`}>
+                            {durationFilter === opt.value && <View className="w-2 h-2 rounded-full bg-white" />}
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </ScrollView>
+              </View>
+
+              {/* Bottom Action Footer */}
+              <View className="px-5 py-3 border-t border-border-primary flex-row items-center justify-between bg-white">
+                <TouchableOpacity
+                  onPress={resetAllFilters}
+                  activeOpacity={0.7}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 mr-3"
+                >
+                  <Text className="text-xs font-bold text-text-secondary">Reset</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setIsFilterModalOpen(false)}
+                  activeOpacity={0.85}
+                  style={{ backgroundColor: '#3C01A7' }}
+                  className="flex-1 py-3 rounded-xl items-center justify-center shadow-md active:bg-[#2A0078]"
+                >
+                  <Text className="text-white text-xs font-black">
+                    Apply Filters ({services.length} {services.length === 1 ? 'service' : 'services'})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     );
   }
@@ -1005,7 +1577,7 @@ export default function CreateBookingScreen() {
       {/* Top Navigation Bar */}
       <View className="px-5 py-4 flex-row items-center border-b border-border-primary bg-white shadow-xs">
         <TouchableOpacity
-          onPress={() => setStep('catalog')}
+          onPress={handleBack}
           activeOpacity={0.8}
           className="w-9 h-9 rounded-xl bg-background-secondary border border-border-primary justify-center items-center mr-3 active:bg-slate-100"
         >
@@ -1028,9 +1600,19 @@ export default function CreateBookingScreen() {
         {cartItems.length > 0 ? (
           <View className="mb-4">
             <Card variant="default" className="p-4 border border-[#3C01A7]/20 bg-[#F0EBFB]/40">
-              <Text className="text-text-primary text-xs font-black uppercase tracking-wider mb-2.5">
-                Service Details ({cartItems.length})
-              </Text>
+              <View className="flex-row justify-between items-center mb-2.5">
+                <Text className="text-text-primary text-xs font-black uppercase tracking-wider">
+                  Service Details ({cartItems.length})
+                </Text>
+                <TouchableOpacity
+                  onPress={() => router.push({ pathname: '/(customer)/cart', params: { from: 'checkout' } } as any)}
+                  activeOpacity={0.7}
+                  className="flex-row items-center bg-white border border-[#3C01A7]/30 px-2.5 py-1 rounded-xl shadow-xs"
+                >
+                  <Ionicons name="create-outline" size={13} color="#3C01A7" style={{ marginRight: 4 }} />
+                  <Text className="text-[#3C01A7] text-[11px] font-black">Edit Cart</Text>
+                </TouchableOpacity>
+              </View>
               {cartItems.map((c) => (
                 <View key={c.id} className="flex-row justify-between items-center py-2 border-b border-border-primary/50 last:border-b-0">
                   <View className="flex-1 mr-2">
@@ -1179,14 +1761,20 @@ export default function CreateBookingScreen() {
         <View className="mb-4">
           <Card variant="default" className="p-4">
             <View className="flex-row justify-between items-center mb-3">
-              <View className="flex-row items-center">
-                <Ionicons name="location-outline" size={16} color="#3C01A7" style={{ marginRight: 6 }} />
-                <Text className="text-text-primary text-xs font-black uppercase tracking-wider">
-                  2. Service Delivery Address
+              <View className="flex-row items-center flex-1 mr-2">
+                <View className="w-6 h-6 rounded-lg bg-[#F0EBFB] items-center justify-center mr-2">
+                  <Ionicons name="location" size={14} color="#3C01A7" />
+                </View>
+                <Text className="text-text-primary text-xs font-black uppercase tracking-wider flex-shrink" numberOfLines={1}>
+                  2. Delivery Address
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setIsEditingAddress(!isEditingAddress)} activeOpacity={0.8}>
-                <Text className="text-[#3C01A7] text-xs font-black">
+              <TouchableOpacity
+                onPress={() => setIsEditingAddress(!isEditingAddress)}
+                activeOpacity={0.8}
+                className="bg-[#F0EBFB] px-3 py-1 rounded-xl border border-[#3C01A7]/30"
+              >
+                <Text className="text-[#3C01A7] text-[11px] font-black">
                   {isEditingAddress ? 'Done' : 'Edit Address'}
                 </Text>
               </TouchableOpacity>
@@ -1195,63 +1783,81 @@ export default function CreateBookingScreen() {
             {isEditingAddress ? (
               <TextInput
                 value={address}
-                onChangeText={setAddress}
+                onChangeText={(val) => {
+                  setAddress(val);
+                  setSelectedAddressId(null);
+                }}
                 className="bg-white border border-[#3C01A7] rounded-xl p-3 text-text-primary text-xs h-20 shadow-xs"
                 multiline
                 placeholder="Door/Flat no, Street, Landmark, City..."
                 placeholderTextColor="#8E84B0"
               />
             ) : (
-              <Text className="text-text-secondary text-xs font-bold leading-5 bg-background-secondary p-3 rounded-xl border border-border-secondary">
-                {address || 'Awaiting location input...'}
-              </Text>
+              <View className="bg-background-secondary p-3.5 rounded-2xl border border-border-secondary">
+                <Text className="text-text-primary text-xs font-bold leading-5">
+                  {address || 'Awaiting location input...'}
+                </Text>
+              </View>
             )}
 
             {/* GPS Lock status */}
             {coords ? (
-              <Text className="text-text-muted text-[9px] font-mono mt-2">
-                📍 GPS Lock: {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
-              </Text>
-            ) : (
-              <View className="flex-row items-center mt-2">
+              <View className="flex-row items-center mt-2 px-1">
+                <Ionicons name="navigate-circle" size={12} color="#10B981" style={{ marginRight: 4 }} />
+                <Text className="text-text-muted text-[10px] font-mono">
+                  GPS Lock: {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
+                </Text>
+              </View>
+            ) : locating ? (
+              <View className="flex-row items-center mt-2 px-1">
                 <ActivityIndicator size="small" color="#FF9F2E" style={{ marginRight: 6 }} />
                 <Text className="text-warning text-[10px] font-bold">Acquiring live coordinates...</Text>
               </View>
-            )}
+            ) : null}
 
             {/* Saved Addresses chips (Instant 1-tap select) */}
             {savedAddresses.length > 0 && (
-              <View className="mt-3.5">
-                <Text className="text-text-muted text-[9px] font-black uppercase tracking-wider mb-2">
-                  Saved Addresses ({savedAddresses.length})
-                </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row py-1">
+              <View className="mt-3.5 pt-3 border-t border-border-primary/60">
+                <View className="flex-row justify-between items-center mb-2">
+                  <Text className="text-text-muted text-[10px] font-black uppercase tracking-wider">
+                    Saved Addresses ({savedAddresses.length})
+                  </Text>
+                  <Text className="text-text-muted text-[9px] font-bold">Tap to select</Text>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="py-1">
                   {savedAddresses.map((addr: any) => {
-                    const isSelected = address.trim() === addr.address.trim();
+                    const isSelected = selectedAddressId === addr.id || address.trim() === addr.address?.trim();
+                    const iconName = addr.label?.toLowerCase() === 'home' 
+                      ? 'home' 
+                      : addr.label?.toLowerCase() === 'work' 
+                      ? 'business' 
+                      : 'location';
+
                     return (
                       <TouchableOpacity
                         key={addr.id}
                         onPress={() => {
+                          setSelectedAddressId(addr.id);
                           setAddress(addr.address);
                           if (addr.latitude && addr.longitude) {
                             setCoords({ lat: Number(addr.latitude), lng: Number(addr.longitude) });
                           }
                         }}
-                        activeOpacity={0.9}
-                        className={`mr-2.5 px-3 py-1.5 rounded-xl border flex-row items-center active:scale-95 ${
+                        activeOpacity={0.85}
+                        className={`mr-2.5 px-3.5 py-2 rounded-xl border flex-row items-center shadow-xs active:scale-95 ${
                           isSelected 
-                            ? 'bg-[#3C01A7]/10 border-[#3C01A7]' 
-                            : 'bg-background-secondary border-border-secondary'
+                            ? 'bg-[#3C01A7] border-[#3C01A7]' 
+                            : 'bg-white border-border-secondary'
                         }`}
                       >
                         <Ionicons 
-                          name={addr.label.toLowerCase() === 'home' ? 'home-outline' : addr.label.toLowerCase() === 'work' ? 'business-outline' : 'location-outline'} 
-                          size={12} 
-                          color={isSelected ? '#3C01A7' : '#584F75'} 
-                          style={{ marginRight: 4 }}
+                          name={isSelected ? 'checkmark-circle' : iconName as any} 
+                          size={13} 
+                          color={isSelected ? '#FFFFFF' : '#3C01A7'} 
+                          style={{ marginRight: 5 }}
                         />
-                        <Text className={`text-[10px] font-bold ${isSelected ? 'text-[#3C01A7]' : 'text-text-secondary'}`}>
-                          {addr.label}
+                        <Text className={`text-xs font-black uppercase ${isSelected ? 'text-white' : 'text-text-primary'}`}>
+                          {addr.label || 'Saved'}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -1262,19 +1868,22 @@ export default function CreateBookingScreen() {
 
             {/* Live GPS Re-detect button */}
             <TouchableOpacity
-              onPress={getLocation}
+              onPress={() => getLocation(true)}
               disabled={locating}
               activeOpacity={0.8}
-              className="mt-3 py-2.5 rounded-xl bg-[#F0EBFB] border border-[#3C01A7]/30 flex-row items-center justify-center"
+              className="mt-3.5 py-2.5 rounded-xl bg-[#F0EBFB] border border-[#3C01A7]/30 flex-row items-center justify-center active:bg-[#3C01A7]/20"
             >
               {locating ? (
-                <ActivityIndicator size="small" color="#3C01A7" style={{ marginRight: 6 }} />
+                <>
+                  <ActivityIndicator size="small" color="#3C01A7" style={{ marginRight: 6 }} />
+                  <Text className="text-[#3C01A7] text-xs font-black">Acquiring GPS...</Text>
+                </>
               ) : (
-                <Ionicons name="navigate-outline" size={14} color="#3C01A7" style={{ marginRight: 6 }} />
+                <>
+                  <Ionicons name="locate" size={15} color="#3C01A7" style={{ marginRight: 6 }} />
+                  <Text className="text-[#3C01A7] text-xs font-black">Use Current GPS Location</Text>
+                </>
               )}
-              <Text className="text-[#3C01A7] text-[10px] font-black">
-                {locating ? 'Detecting GPS...' : '📍 Use Current GPS Location'}
-              </Text>
             </TouchableOpacity>
           </Card>
         </View>

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Linking, Platform } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Linking, Platform, BackHandler } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -32,6 +32,23 @@ export default function BookingDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t } = useLanguage();
   const [copiedOtp, setCopiedOtp] = useState(false);
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(customer)/home');
+    }
+  };
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, []);
 
   // Booking Query
   const { data, isLoading, refetch, isError } = useQuery({
@@ -200,7 +217,7 @@ export default function BookingDetailScreen() {
         <Text className="text-slate-500 text-xs text-center mt-2 mb-6">
           {t('bookings.bookingNotFoundMsg')}
         </Text>
-        <Button label={t('bookings.backToBookings') || 'Go Back'} onPress={() => router.back()} />
+        <Button label={t('bookings.backToBookings') || 'Go Back'} onPress={handleBack} />
       </View>
     );
   }
@@ -227,7 +244,7 @@ export default function BookingDetailScreen() {
         <View className="max-w-md w-full mx-auto flex-row items-center justify-between">
           <View className="flex-row items-center flex-1">
             <TouchableOpacity
-              onPress={() => router.back()}
+              onPress={handleBack}
               activeOpacity={0.7}
               className="w-10 h-10 rounded-full bg-slate-100 justify-center items-center mr-3 active:bg-slate-200"
             >

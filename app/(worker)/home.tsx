@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,11 +11,13 @@ import {
   Linking,
   Dimensions,
   StyleSheet,
+  BackHandler,
+  ToastAndroid,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
@@ -102,6 +104,28 @@ export default function WorkerHomeScreen() {
   const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [serviceCity, setServiceCity] = useState('Hyderabad');
   const [locationModalVisible, setLocationModalVisible] = useState(false);
+
+  // Double-tap hardware back button to exit cleanly on Android
+  const lastBackPressTime = useRef(0);
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        const now = Date.now();
+        if (now - lastBackPressTime.current < 2000) {
+          BackHandler.exitApp();
+          return true;
+        }
+        lastBackPressTime.current = now;
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Press back again to exit', ToastAndroid.SHORT);
+        }
+        return true;
+      };
+
+      const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => sub.remove();
+    }, [])
+  );
 
   useEffect(() => {
     storage.getItem('volo_worker_service_city').then((saved) => {
@@ -383,6 +407,17 @@ export default function WorkerHomeScreen() {
 
   const toggleOnline = () => {
     if (toggleStatusMutation.isPending) return;
+    if (!isOnline && dashboardData?.kycStatus !== 'APPROVED') {
+      Alert.alert(
+        'KYC Approval Required',
+        'You must complete your KYC verification (Aadhaar, PAN & Bank details) and be approved before you can go online to receive jobs.',
+        [
+          { text: 'Complete KYC', onPress: () => router.push('/(worker)/kyc' as any) },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return;
+    }
     toggleStatusMutation.mutate(!isOnline);
   };
 
@@ -584,6 +619,33 @@ export default function WorkerHomeScreen() {
               )}
             </View>
           </View>
+
+          {/* ⚠️ KYC Action Required Banner (When not approved) */}
+          {dashboardData?.kycStatus !== 'APPROVED' && (
+            <TouchableOpacity
+              onPress={() => router.push('/(worker)/kyc' as any)}
+              activeOpacity={0.9}
+              className="mx-4 mb-3.5 rounded-2xl p-4 shadow-sm border border-amber-300 flex-row items-center gap-3.5"
+              style={{ backgroundColor: '#FEF3C7' }}
+            >
+              <View className="w-10 h-10 rounded-xl bg-amber-500 items-center justify-center shrink-0 shadow-2xs">
+                <Ionicons name="shield-outline" size={22} color="#FFFFFF" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-amber-950 text-xs font-black uppercase tracking-wider">
+                  KYC Verification Required
+                </Text>
+                <Text className="text-amber-800 text-[11px] font-semibold mt-0.5 leading-snug">
+                  Upload Aadhaar, PAN & bank details to go online and accept bookings.
+                </Text>
+              </View>
+              <View className="bg-amber-500 px-3 py-1.5 rounded-xl shrink-0">
+                <Text className="text-white text-[10px] font-black uppercase tracking-wider">
+                  Verify &gt;
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
 
           {/* 🌟 HERO ANNOUNCEMENT BANNER (Clean In-Stream Card) */}
           {workerHeroBanner && (
@@ -1063,13 +1125,7 @@ export default function WorkerHomeScreen() {
               <View className="flex-row justify-between gap-3">
                 {/* 1. KYC Info */}
                 <TouchableOpacity
-                  onPress={() =>
-                    showAlert(
-                      'KYC Status',
-                      `Your verification status is ${dashboardData?.kycStatus || 'APPROVED'
-                      }.\n\nAadhaar, PAN, and Bank details are verified.`
-                    )
-                  }
+                  onPress={() => router.push('/(worker)/kyc' as any)}
                   activeOpacity={0.8}
                   className="flex-1 bg-white p-3 rounded-[20px] border border-slate-200/80 items-center shadow-xs active:scale-95"
                 >

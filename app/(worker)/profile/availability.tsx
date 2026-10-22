@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Switch, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Switch, TextInput, Alert, ActivityIndicator, BackHandler } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,6 +22,23 @@ const WEEKDAYS = [
 export default function WorkerAvailabilityScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(worker)/profile');
+    }
+  };
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, []);
 
   // Query to fetch availability parameters
   const { data: availData, isLoading, isError, refetch } = useQuery({
@@ -89,7 +106,7 @@ export default function WorkerAvailabilityScreen() {
       Alert.alert('Saved', 'Availability settings updated successfully.');
       queryClient.invalidateQueries({ queryKey: ['worker-availability'] });
       queryClient.invalidateQueries({ queryKey: ['worker-dashboard'] });
-      router.back();
+      handleBack();
     },
     onError: (err: any) => {
       Alert.alert('Error', err?.response?.data?.error ?? 'Failed to save availability settings.');
@@ -118,7 +135,7 @@ export default function WorkerAvailabilityScreen() {
       {/* Header */}
       <View className="px-6 py-4 flex-row items-center border-b border-border-primary bg-white shadow-sm">
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={handleBack}
           activeOpacity={0.8}
           className="w-9 h-9 rounded-xl bg-background-secondary border border-border-primary justify-center items-center mr-3 active:bg-slate-100"
         >

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, TextInput } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, TextInput, BackHandler } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,6 +17,27 @@ export default function SavedAddressesScreen() {
   const [isAdding, setIsAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('HOME');
   const [newAddressText, setNewAddressText] = useState('');
+
+  const handleBack = () => {
+    if (isAdding) {
+      setIsAdding(false);
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(customer)/profile');
+    }
+  };
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [isAdding]);
 
   // Fetch Addresses Query
   const { data, isLoading, refetch } = useQuery({
@@ -115,7 +136,7 @@ export default function SavedAddressesScreen() {
       <View className="px-6 py-4 flex-row justify-between items-center border-b border-slate-100 bg-white">
         <View className="flex-row items-center">
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={handleBack}
             className="w-9 h-9 rounded-full bg-slate-50 justify-center items-center mr-3 active:bg-slate-100"
           >
             <Ionicons name="arrow-back" size={18} color="#1e293b" />

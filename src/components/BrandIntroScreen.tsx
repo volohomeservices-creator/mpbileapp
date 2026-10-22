@@ -234,12 +234,31 @@ export function BrandIntroScreen({ isInitializing, onExitComplete }: BrandIntroS
     };
   }, [reduceMotion]);
 
-  // Ensure the intro screen stays visible for exactly 1.5 seconds
+  // Ensure the intro screen stays visible for at least 1.5 seconds, but force exit by 2.8s max
   useEffect(() => {
     const timer = setTimeout(() => {
       setMinTimeElapsed(true);
     }, 1500);
-    return () => clearTimeout(timer);
+
+    // Hard fallback: never trap the user on loading screen if storage or initialization is delayed
+    const hardTimeout = setTimeout(() => {
+      if (!isExiting.current) {
+        isExiting.current = true;
+        Animated.timing(exitOpacity, {
+          toValue: 0,
+          duration: 300,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }).start(() => {
+          onExitComplete();
+        });
+      }
+    }, 2800);
+
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(hardTimeout);
+    };
   }, []);
 
   // Smooth exit transition once 1.5 seconds have elapsed and initialization is finished
