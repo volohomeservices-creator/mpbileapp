@@ -94,8 +94,23 @@ export default function WorkerKycScreen() {
       const data = await getKycDetails();
       setDocuments(data.documents || []);
       setKycState(data.kycState);
-      setCategories(data.categories || []);
-      setSelectedSkills(data.skills || []);
+
+      // Deduplicate categories and strictly preserve active catalog
+      const rawCategories = data.categories || [];
+      const seenNames = new Set<string>();
+      const cleanCategories: Array<{ id: string; name: string }> = [];
+      rawCategories.forEach((c) => {
+        const norm = (c.name || '').trim().toLowerCase();
+        if (norm && !seenNames.has(norm)) {
+          seenNames.add(norm);
+          cleanCategories.push({ id: c.id, name: c.name.trim() });
+        }
+      });
+      setCategories(cleanCategories);
+
+      // Enforce single trade selection
+      const initialSkills = Array.isArray(data.skills) && data.skills.length > 0 ? [data.skills[0]] : [];
+      setSelectedSkills(initialSkills);
 
       if (data.bankDetails) {
         setFullName(data.bankDetails.full_name || user?.full_name || '');
@@ -199,12 +214,9 @@ export default function WorkerKycScreen() {
     }
   };
 
-  const toggleSkill = (skillName: string) => {
-    if (selectedSkills.includes(skillName)) {
-      setSelectedSkills(selectedSkills.filter((s) => s !== skillName));
-    } else {
-      setSelectedSkills([...selectedSkills, skillName]);
-    }
+  const selectTrade = (tradeName: string) => {
+    // Only 1 service trade allowed per worker
+    setSelectedSkills([tradeName]);
   };
 
   const handleSaveAndSubmit = async () => {
@@ -243,7 +255,12 @@ export default function WorkerKycScreen() {
     }
 
     if (selectedSkills.length === 0) {
-      Alert.alert('Select Skills', 'Please select at least one skill / service trade you provide.');
+      Alert.alert('Select Service Trade', 'Please select 1 service trade you provide.');
+      return;
+    }
+
+    if (selectedSkills.length > 1) {
+      Alert.alert('Only 1 Trade Allowed', 'You can only select 1 service trade.');
       return;
     }
 
@@ -759,31 +776,38 @@ export default function WorkerKycScreen() {
 
           {/* ================= SECTION 4: SERVICE TRADES ================= */}
           <View className="bg-white rounded-2xl border border-slate-200 p-4 mb-6 shadow-2xs">
-            <Text className="text-slate-800 text-sm font-black uppercase tracking-wider mb-1">
-              4. Service Trade & Skills
-            </Text>
+            <View className="flex-row items-center justify-between mb-1">
+              <Text className="text-slate-800 text-sm font-black uppercase tracking-wider">
+                4. Service Trade & Skills
+              </Text>
+              <View className="bg-[#3C01A7]/10 px-2.5 py-0.5 rounded-full border border-[#3C01A7]/20">
+                <Text className="text-[10px] font-black text-[#3C01A7] uppercase tracking-wider">
+                  Choose 1 Only
+                </Text>
+              </View>
+            </View>
             <Text className="text-slate-400 text-xs mb-3.5">
-              Select all categories of work you are qualified to perform.
+              Select your primary service trade. Workers can only be registered for 1 category.
             </Text>
 
             <View className="flex-row flex-wrap gap-2">
               {categories.length > 0 ? (
                 categories.map((cat) => {
-                  const isSelected = selectedSkills.includes(cat.name);
+                  const isSelected = selectedSkills[0] === cat.name;
                   return (
                     <TouchableOpacity
                       key={cat.id}
-                      onPress={() => toggleSkill(cat.name)}
+                      onPress={() => selectTrade(cat.name)}
                       activeOpacity={0.8}
-                      className={`px-3.5 py-2 rounded-xl border flex-row items-center gap-1.5 ${
+                      className={`px-3.5 py-2.5 rounded-xl border flex-row items-center gap-2 ${
                         isSelected
-                          ? 'bg-[#3C01A7] border-[#3C01A7]'
+                          ? 'bg-[#3C01A7] border-[#3C01A7] shadow-xs'
                           : 'bg-slate-50 border-slate-200'
                       }`}
                     >
                       <Ionicons
-                        name={isSelected ? 'checkmark-circle' : 'add-circle-outline'}
-                        size={15}
+                        name={isSelected ? 'radio-button-on' : 'radio-button-off'}
+                        size={16}
                         color={isSelected ? '#FFFFFF' : '#64748B'}
                       />
                       <Text

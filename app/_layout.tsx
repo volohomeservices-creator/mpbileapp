@@ -70,6 +70,8 @@ import { storage } from '@/utils/storage';
 const HAS_SEEN_LAUNCH_KEY = 'volo_has_seen_brand_launch';
 
 import { MOBILE_CONFIG } from '@/lib/mobile-config';
+import { setupFcmNotifications, listenForFcmTokenRefresh } from '@/features/notifications/fcmSetup';
+import { registerNotificationHandlers } from '@/features/notifications/notificationHandler';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -111,6 +113,22 @@ function AppShell() {
     });
     return unsub;
   }, []);
+
+  // Register push notifications and notification event handlers when authenticated
+  useEffect(() => {
+    if (isAuthenticated && !isLoading) {
+      setupFcmNotifications().catch((err) => {
+        if (__DEV__) console.warn('[FCM] Setup error:', err);
+      });
+      const unsubRefresh = listenForFcmTokenRefresh();
+      const unsubHandlers = registerNotificationHandlers();
+
+      return () => {
+        unsubRefresh();
+        unsubHandlers();
+      };
+    }
+  }, [isAuthenticated, isLoading]);
 
   // Route guard — hydrates immediately once auth state is checked.
   // We intentionally allow this to route while BrandIntroScreen is playing its 1.5s animation

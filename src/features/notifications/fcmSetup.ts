@@ -6,6 +6,7 @@ import { registerDeviceToken } from '@/api/deviceTokens';
  * Request user permission for push notifications and register FCM token with the backend.
  */
 export async function setupFcmNotifications(): Promise<string | null> {
+  if (Platform.OS === 'web') return null;
   try {
     // 1. Request Permission
     const authStatus = await messaging().requestPermission();
@@ -43,6 +44,7 @@ export async function setupFcmNotifications(): Promise<string | null> {
  * Set up token refresh listener to update server when Firebase refreshes the token.
  */
 export function listenForFcmTokenRefresh() {
+  if (Platform.OS === 'web') return () => {};
   return messaging().onTokenRefresh(async (newToken) => {
     try {
       if (__DEV__) console.log('[FCM] Token refreshed:', newToken);

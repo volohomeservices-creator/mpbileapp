@@ -1,4 +1,4 @@
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import messaging from '@react-native-firebase/messaging';
 import { router } from 'expo-router';
 
@@ -6,6 +6,7 @@ import { router } from 'expo-router';
  * Handles incoming push notifications for foreground, background, and quit states.
  */
 export function registerNotificationHandlers() {
+  if (Platform.OS === 'web') return () => {};
   // 1. Foreground listener
   const unsubscribeForeground = messaging().onMessage(async (remoteMessage) => {
     if (__DEV__) console.log('[FCM] Foreground notification received:', remoteMessage);

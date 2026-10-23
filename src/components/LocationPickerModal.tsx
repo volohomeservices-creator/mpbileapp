@@ -24,15 +24,9 @@ export interface CityOption {
 
 export const POPULAR_CITIES: CityOption[] = [
   { id: 'hyderabad', name: 'Hyderabad', state: 'Telangana', hub: true },
+  { id: 'secunderabad', name: 'Secunderabad', state: 'Telangana', hub: true },
+  { id: 'cyberabad', name: 'Cyberabad / Hitec City', state: 'Telangana', hub: true },
   { id: 'bengaluru', name: 'Bengaluru', state: 'Karnataka', hub: true },
-  { id: 'mumbai', name: 'Mumbai', state: 'Maharashtra', hub: true },
-  { id: 'delhi-ncr', name: 'Delhi NCR', state: 'Delhi', hub: true },
-  { id: 'chennai', name: 'Chennai', state: 'Tamil Nadu', hub: true },
-  { id: 'pune', name: 'Pune', state: 'Maharashtra', hub: true },
-  { id: 'kolkata', name: 'Kolkata', state: 'West Bengal', hub: false },
-  { id: 'ahmedabad', name: 'Ahmedabad', state: 'Gujarat', hub: false },
-  { id: 'jaipur', name: 'Jaipur', state: 'Rajasthan', hub: false },
-  { id: 'chandigarh', name: 'Chandigarh', state: 'Punjab', hub: false },
 ];
 
 interface LocationPickerModalProps {

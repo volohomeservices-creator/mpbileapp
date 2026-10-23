@@ -2,7 +2,7 @@ import { apiPost, apiDelete } from '@/api/client';
 
 /** Register FCM device token with the backend. */
 export const registerDeviceToken = (token: string, platform: 'android' | 'ios'): Promise<{ success: boolean }> =>
-  apiPost('/api/device-tokens/register', { token, platform });
+  apiPost('/api/device-tokens/register', { deviceToken: token, token, platform });
 
 /** Remove FCM device token on logout. */
 export const removeDeviceToken = (token: string): Promise<{ success: boolean }> =>

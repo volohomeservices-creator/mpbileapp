@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, TextInput, Platform, Linking, BackHandler } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, TextInput, Platform, Linking, BackHandler, KeyboardAvoidingView } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -56,6 +56,7 @@ export default function WorkerJobDetailScreen() {
   const [otp, setOtp] = useState('');
   const [otpError, setOtpError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const otpInputRef = useRef<TextInput>(null);
   const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [showFullMap, setShowFullMap] = useState(true);
 
@@ -223,17 +224,18 @@ export default function WorkerJobDetailScreen() {
     }
   };
 
-  const handleStartJob = async () => {
-    if (otp.length !== 4) {
+  const handleStartJob = async (codeToVerify?: string) => {
+    const finalOtp = codeToVerify ?? otp;
+    if (finalOtp.length !== 4) {
       setOtpError(t('auth.incorrectPin') || 'Please enter the complete 4-digit PIN');
       return;
     }
     setOtpError('');
     setActionLoading(true);
     try {
-      const res = await startJob(id, otp);
+      const res = await startJob(id, finalOtp);
       if (res.success) {
-        showAlert('Service Started! ⚡', 'Work has begun. Mark complete when you finish the task.');
+        showAlert('Service Started! ✓', 'Work has begun. Mark complete when you finish the task.');
         queryClient.invalidateQueries({ queryKey: ['worker-job-detail', id] });
         refetch();
       } else {
@@ -382,18 +384,33 @@ export default function WorkerJobDetailScreen() {
           <View className="flex-row gap-3 mb-8">
             <TouchableOpacity
               onPress={() => rejectMutation.mutate()}
+              disabled={rejectMutation.isPending || acceptMutation.isPending}
               activeOpacity={0.8}
-              className="flex-1 h-13 rounded-2xl border border-red-200 bg-red-50/60 justify-center items-center"
+              className="flex-1 h-13 rounded-2xl border border-red-200 bg-red-50/80 justify-center items-center flex-row gap-1.5"
             >
-              <Text className="text-red-600 font-bold text-sm">{t('jobs.decline') || 'Decline'}</Text>
+              {rejectMutation.isPending ? (
+                <ActivityIndicator size="small" color="#DC2626" />
+              ) : (
+                <>
+                  <Ionicons name="close-circle-outline" size={18} color="#DC2626" />
+                  <Text className="text-red-600 font-extrabold text-sm">{t('jobs.decline') || 'Decline'}</Text>
+                </>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => acceptMutation.mutate()}
-              activeOpacity={0.8}
-              className="flex-1 h-13 rounded-2xl bg-[#3C01A7] shadow-premium justify-center items-center flex-row gap-2"
+              disabled={rejectMutation.isPending || acceptMutation.isPending}
+              activeOpacity={0.85}
+              className="flex-1 h-13 rounded-2xl bg-[#3C01A7] shadow-md shadow-[#3C01A7]/30 justify-center items-center flex-row gap-2"
             >
-              <Ionicons name="checkmark-circle" size={18} color="white" />
-              <Text className="text-white font-bold text-sm">{t('jobs.acceptShift') || 'Accept Shift'}</Text>
+              {acceptMutation.isPending ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={19} color="white" />
+                  <Text className="text-white font-extrabold text-sm">{t('jobs.acceptShift') || 'Accept Shift'}</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         );
@@ -478,11 +495,16 @@ export default function WorkerJobDetailScreen() {
         </View>
       </View>
 
-      <ScrollView
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32 }}
-        showsVerticalScrollIndicator={false}
       >
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 64 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
         <View className="max-w-md w-full mx-auto">
           {/* Visual Step Progress Tracker */}
           <View className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-premium mb-4">
@@ -590,87 +612,182 @@ export default function WorkerJobDetailScreen() {
 
           {/* DEDICATED VERIFY START OTP CARD (Prominent in ARRIVED state) */}
           {job.status === BookingStatus.ARRIVED && (
-            <View className="bg-white rounded-3xl p-5 border border-purple-200/80 shadow-premium mb-4">
+            <View className="bg-white rounded-3xl p-6 border border-purple-200/90 shadow-premium mb-5">
+              {/* Card Header */}
               <View className="flex-row items-center justify-between mb-2">
-                <View className="flex-row items-center gap-2">
-                  <View className="w-7 h-7 rounded-lg bg-purple-100 items-center justify-center">
-                    <Ionicons name="shield-checkmark" size={16} color="#3C01A7" />
+                <View className="flex-row items-center gap-2.5">
+                  <View className="w-9 h-9 rounded-xl bg-purple-100 items-center justify-center">
+                    <Ionicons name="shield-checkmark" size={18} color="#3C01A7" />
                   </View>
-                  <Text className="text-slate-900 font-extrabold text-sm">
-                    {t('jobs.verifyStartOtp') || 'Verify Start OTP'}
-                  </Text>
+                  <View>
+                    <Text className="text-slate-900 font-extrabold text-base">
+                      {t('jobs.verifyStartOtp') || 'Verify Start PIN'}
+                    </Text>
+                    <Text className="text-slate-400 text-[10px] font-bold uppercase tracking-wider font-mono">
+                      Security Handshake
+                    </Text>
+                  </View>
                 </View>
                 <Badge label="Required to Start" variant="brand" size="sm" />
               </View>
 
-              <Text className="text-slate-500 text-xs mb-4 leading-4.5">
-                {t('jobs.enterCodeMsg') || 'Enter the 4-digit code provided by the customer to start work.'}
+              <Text className="text-slate-500 text-xs mt-1 mb-5 leading-relaxed font-medium">
+                {t('jobs.enterCodeMsg') || 'Ask the customer for the 4-digit start PIN displayed on their booking screen.'}
               </Text>
 
-              {/* Digit Box Display */}
-              <View className="flex-row justify-center gap-3 mb-4">
-                {[0, 1, 2, 3].map((idx) => {
-                  const digit = otp[idx] || '';
-                  const isCurrent = otp.length === idx;
-                  return (
-                    <View
-                      key={idx}
-                      className={`w-14 h-16 rounded-2xl border-2 items-center justify-center ${
-                        isCurrent
-                          ? 'border-[#3C01A7] bg-purple-50/60 shadow-sm'
-                          : digit
-                          ? 'border-slate-800 bg-white'
-                          : 'border-slate-200 bg-slate-50'
-                      }`}
-                    >
-                      <Text className="text-2xl font-extrabold text-slate-900 font-mono">
-                        {digit}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-
-              {/* Hidden/Active Input Controller */}
+              {/* Invisible Active Input Controller (Keeps keyboard open & syncs seamlessly) */}
               <TextInput
-                placeholder="Tap to enter 4-digit code"
-                placeholderTextColor="#94A3B8"
-                keyboardType="numeric"
+                ref={otpInputRef}
+                keyboardType="number-pad"
                 maxLength={4}
                 value={otp}
                 onChangeText={(text) => {
-                  setOtp(text.replace(/[^0-9]/g, ''));
+                  const cleaned = text.replace(/[^0-9]/g, '').slice(0, 4);
+                  setOtp(cleaned);
                   if (otpError) setOtpError('');
+                  if (cleaned.length === 4) {
+                    handleStartJob(cleaned);
+                  }
                 }}
-                className="h-11 px-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-center text-sm font-bold mb-3 focus:border-[#3C01A7] focus:bg-white"
+                style={{
+                  position: 'absolute',
+                  width: 1,
+                  height: 1,
+                  opacity: 0,
+                }}
+                autoFocus={true}
               />
 
+              {/* Interactive 4-Digit Box Display */}
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={() => otpInputRef.current?.focus()}
+                className="flex-row justify-center gap-3.5 mb-5"
+              >
+                {[0, 1, 2, 3].map((idx) => {
+                  const digit = otp[idx] || '';
+                  const isCurrent = otp.length === idx;
+                  const isFilled = Boolean(digit);
+                  return (
+                    <View
+                      key={idx}
+                      style={{
+                        width: 58,
+                        height: 68,
+                        borderRadius: 18,
+                        borderWidth: isCurrent ? 2.5 : isFilled ? 2 : 1.5,
+                        borderColor: isCurrent ? '#3C01A7' : isFilled ? '#4C1D95' : '#E2E8F0',
+                        backgroundColor: isCurrent ? '#FAF5FF' : isFilled ? '#FFFFFF' : '#F8FAFC',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        shadowColor: isCurrent ? '#3C01A7' : '#000000',
+                        shadowOffset: { width: 0, height: isCurrent ? 3 : 1 },
+                        shadowOpacity: isCurrent ? 0.2 : 0.04,
+                        shadowRadius: isCurrent ? 6 : 2,
+                        elevation: isCurrent ? 3 : 1,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 28,
+                          fontWeight: '900',
+                          color: '#0F172A',
+                          fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                        }}
+                      >
+                        {digit}
+                      </Text>
+                      {/* Active Cursor Indicator */}
+                      {isCurrent && !digit && (
+                        <View
+                          style={{
+                            position: 'absolute',
+                            bottom: 14,
+                            width: 18,
+                            height: 3,
+                            borderRadius: 2,
+                            backgroundColor: '#3C01A7',
+                          }}
+                        />
+                      )}
+                    </View>
+                  );
+                })}
+              </TouchableOpacity>
+
+              {/* Clear Link when digits entered */}
+              {otp.length > 0 && !actionLoading && (
+                <View className="flex-row justify-end mb-3 pr-2">
+                  <TouchableOpacity
+                    onPress={() => {
+                      setOtp('');
+                      if (otpError) setOtpError('');
+                      otpInputRef.current?.focus();
+                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Text className="text-xs font-bold text-[#3C01A7]">Clear code</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Error Message */}
               {otpError ? (
-                <View className="bg-red-50 border border-red-200 rounded-xl p-2.5 mb-3 flex-row items-center gap-2">
-                  <Ionicons name="alert-circle" size={16} color="#DC2626" />
-                  <Text className="text-red-700 text-xs font-semibold flex-1">{otpError}</Text>
+                <View className="bg-red-50 border border-red-200 rounded-2xl p-3 mb-4 flex-row items-center gap-2.5">
+                  <Ionicons name="alert-circle" size={18} color="#DC2626" />
+                  <Text className="text-red-700 text-xs font-bold flex-1">{otpError}</Text>
                 </View>
               ) : null}
 
-              {/* High-visibility Action Button */}
+              {/* Clean, High-End Action Button */}
               <TouchableOpacity
-                onPress={handleStartJob}
+                onPress={() => handleStartJob()}
                 disabled={actionLoading || otp.length !== 4}
-                activeOpacity={0.85}
-                className={`w-full h-13 rounded-2xl flex-row justify-center items-center gap-2 shadow-sm ${
-                  otp.length === 4 && !actionLoading
-                    ? 'bg-[#3C01A7] active:scale-[0.99]'
-                    : 'bg-slate-300 opacity-80'
-                }`}
+                activeOpacity={0.88}
+                style={{
+                  width: '100%',
+                  height: 52,
+                  borderRadius: 18,
+                  flexDirection: 'row',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: 8,
+                  backgroundColor:
+                    otp.length === 4 && !actionLoading ? '#3C01A7' : '#E2E8F0',
+                  shadowColor: '#3C01A7',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: otp.length === 4 ? 0.25 : 0,
+                  shadowRadius: 8,
+                  elevation: otp.length === 4 ? 4 : 0,
+                }}
               >
                 {actionLoading ? (
-                  <ActivityIndicator color="white" />
+                  <>
+                    <ActivityIndicator color="white" size="small" />
+                    <Text style={{ color: 'white', fontWeight: '800', fontSize: 14 }}>
+                      Verifying PIN...
+                    </Text>
+                  </>
                 ) : (
                   <>
-                    <Ionicons name="flash" size={18} color="white" />
-                    <Text className="text-white font-extrabold text-sm">
-                      {t('jobs.verifyBtn') || 'Verify OTP & Start Job'} ⚡
+                    <Ionicons
+                      name="shield-checkmark"
+                      size={18}
+                      color={otp.length === 4 ? '#FFFFFF' : '#94A3B8'}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        fontWeight: '800',
+                        color: otp.length === 4 ? '#FFFFFF' : '#94A3B8',
+                        letterSpacing: 0.3,
+                      }}
+                    >
+                      {otp.length === 4 ? 'Verify PIN & Start Job' : 'Enter 4-Digit Customer PIN'}
                     </Text>
+                    {otp.length === 4 && (
+                      <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+                    )}
                   </>
                 )}
               </TouchableOpacity>
@@ -835,7 +952,8 @@ export default function WorkerJobDetailScreen() {
           {/* Workflow Bottom Actions */}
           {renderWorkflowButton()}
         </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
