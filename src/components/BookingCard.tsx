@@ -63,12 +63,20 @@ export function BookingCard({ booking, onPress, onWriteReview }: BookingCardProp
   const price = booking.total_amount;
   const address = booking.address_line;
 
-  const formattedDate = new Date(booking.created_at).toLocaleDateString('en-IN', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const isScheduled = !!booking.scheduled_at;
+  const formattedDate = booking.scheduled_at
+    ? new Date(booking.scheduled_at).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : new Date(booking.created_at).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
   
   // Safely extract joined review from the backend response (supports both array and object schemas)
   const rawReview = (booking as any).reviews;
@@ -83,9 +91,13 @@ export function BookingCard({ booking, onPress, onWriteReview }: BookingCardProp
               {serviceName}
             </Text>
             <View className="flex-row items-center mt-1">
-              <Ionicons name="time-outline" size={13} color="rgb(var(--text-muted))" />
-              <Text className="text-text-secondary text-xs ml-1 font-semibold">
-                {formattedDate}
+              <Ionicons 
+                name={isScheduled ? "calendar-outline" : "time-outline"} 
+                size={13} 
+                color={isScheduled ? "#7C3AED" : "rgb(var(--text-muted))"} 
+              />
+              <Text className={`text-xs ml-1 font-semibold ${isScheduled ? 'text-purple-700 font-extrabold' : 'text-text-secondary'}`}>
+                {isScheduled ? `Scheduled: ${formattedDate}` : formattedDate}
               </Text>
             </View>
           </View>

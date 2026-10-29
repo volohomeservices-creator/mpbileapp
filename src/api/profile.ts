@@ -32,7 +32,20 @@ export const addAddress = (data: {
   label: string;
   address: string;
   is_default: boolean;
-}): Promise<{ success: boolean }> => apiPost('/api/customer/addresses', data);
+  city?: string;
+  state?: string;
+  pincode?: string;
+  latitude?: number;
+  longitude?: number;
+}): Promise<{ success: boolean }> => {
+  const pinMatch = data.address?.match(/\b\d{6}\b/);
+  return apiPost('/api/customer/addresses', {
+    city: 'Bangalore',
+    state: 'Karnataka',
+    pincode: pinMatch ? pinMatch[0] : '560001',
+    ...data,
+  });
+};
 
 /** Delete a saved address. */
 export const deleteAddress = (id: string): Promise<{ success: boolean }> =>
@@ -69,3 +82,72 @@ export const getWorkerAvailability = (): Promise<WorkerAvailability> =>
 /** Update worker availability settings. */
 export const updateWorkerAvailability = (data: WorkerAvailability): Promise<{ success: boolean }> =>
   apiPut('/api/worker/availability', data);
+
+/** Customer Referrals API */
+export const getCustomerReferrals = (): Promise<{
+  code: string | null;
+  referrals: any[];
+  stats: {
+    successCount: number;
+    pendingCount: number;
+    totalEarned: number;
+    pendingAmount: number;
+  };
+  settings: {
+    referrer_reward: number;
+    referee_reward: number;
+    min_bookings_to_qualify: number;
+    min_referrer_orders?: number;
+  };
+  eligibility?: {
+    isEligible: boolean;
+    completedOrders: number;
+    minReferrerOrders: number;
+  };
+}> => apiGet('/api/customer/referrals');
+
+/** Worker Referrals API */
+export const getWorkerReferrals = (): Promise<{
+  code: string | null;
+  referrals: any[];
+  stats: {
+    successCount: number;
+    pendingCount: number;
+    totalEarned: number;
+    pendingAmount: number;
+  };
+  settings: {
+    referrer_reward: number;
+    referee_reward: number;
+    min_bookings_to_qualify: number;
+    min_referrer_bookings?: number;
+  };
+  eligibility?: {
+    isEligible: boolean;
+    completedJobs: number;
+    minReferrerJobs: number;
+  };
+}> => apiGet('/api/worker/referrals');
+
+/** Customer Rewards & Volo Coins API */
+export const getRewards = (): Promise<{
+  coins: number;
+  history: Array<{
+    id: string;
+    amount: number;
+    description: string;
+    created_at: string;
+  }>;
+}> => apiGet('/api/customer/rewards');
+
+export const convertRewards = (amountToConvert: number): Promise<{ success: boolean; converted: number }> =>
+  apiPost('/api/customer/rewards', { amountToConvert });
+
+/** Customer Reviews API */
+export const getCustomerReviews = (): Promise<{ reviews: any[] }> =>
+  apiGet('/api/customer/reviews');
+
+/** Set or update Security PIN */
+export const setSecurityPin = (pin: string): Promise<{ success: boolean }> =>
+  apiPost('/api/auth/set-pin', { pin });
+

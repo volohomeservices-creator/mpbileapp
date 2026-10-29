@@ -41,6 +41,18 @@ const getFriendlyErrorMessage = (err: any): { title: string; message: string } =
   const msg = err?.response?.data?.error ?? err?.message ?? '';
 
   if (
+    code === 'UNAUTHORIZED_ROLE' ||
+    status === 403 ||
+    msg.toLowerCase().includes('registered as') ||
+    msg.toLowerCase().includes('portal')
+  ) {
+    return {
+      title: 'Portal Mismatch',
+      message: msg || 'This mobile number is registered for another portal. Please switch tabs above.',
+    };
+  }
+
+  if (
     status === 401 ||
     code === 'INVALID_PIN' ||
     msg.toLowerCase().includes('invalid pin') ||
@@ -83,6 +95,10 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState<'customer' | 'worker'>('customer');
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
 
   // PIN Login Mode states
   const [showPinInput, setShowPinInput] = useState(false);
@@ -95,6 +111,18 @@ export default function LoginScreen() {
       return;
     }
 
+    if (mode === 'register') {
+      if (!firstName.trim()) {
+        Alert.alert('First Name Required', 'Please enter your first name.');
+        return;
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!email.trim() || !emailRegex.test(email.trim())) {
+        Alert.alert('Valid Email Required', 'Please enter a valid email address.');
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       if (showPinInput) {
@@ -104,7 +132,17 @@ export default function LoginScreen() {
           return;
         }
 
-        const data = await pinLogin(phoneCheck.e164, pin);
+        const data = await pinLogin(phoneCheck.e164, pin, role);
+        if (data.user.role !== role) {
+          const registeredPortal = data.user.role === 'customer' ? 'Customer' : 'Partner';
+          showAlert('Portal Mismatch', `This mobile number is registered as a ${registeredPortal}. Please switch to the ${registeredPortal} tab.`);
+          if (data.user.role === 'customer' || data.user.role === 'worker') {
+            setRole(data.user.role);
+          }
+          setLoading(false);
+          return;
+        }
+
         await setAuth(data.token, data.refreshToken, data.user);
 
         if (data.user.role === 'worker') {
@@ -118,18 +156,61 @@ export default function LoginScreen() {
         }
       } else {
         try {
-          const result = await preCheck(phoneCheck.e164);
-          if (result.authMethod === 'pin_required') {
-            setShowPinInput(true);
+          const result = await preCheck(phoneCheck.e164, role);
+          if (mode === 'register' && result.isRegistered) {
+            Alert.alert(
+              'Already Registered',
+              'This mobile number is already registered with VOLO. Please switch to Sign In.',
+              [{ text: 'Switch to Sign In', onPress: () => setMode('login') }]
+            );
+            setLoading(false);
             return;
           }
-        } catch (preCheckErr) {
+
+          if (mode === 'login') {
+            if (result.authMethod === 'pin_required') {
+              setShowPinInput(true);
+              return;
+            }
+            if (result.isRegistered === false) {
+              Alert.alert(
+                'Account Not Found',
+                'No account found with this mobile number. Please register your account.',
+                [{ text: 'New Registration', onPress: () => setMode('register') }]
+              );
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (preCheckErr: any) {
+          const status = preCheckErr?.response?.status;
+          const errData = preCheckErr?.response?.data;
+          if (status === 403 && (errData?.error === 'UNAUTHORIZED_ROLE' || errData?.code === 'UNAUTHORIZED_ROLE')) {
+            const registeredRole: 'customer' | 'worker' = (errData?.userRole === 'customer' || errData?.userRole === 'worker')
+              ? errData.userRole
+              : (role === 'customer' ? 'worker' : 'customer');
+            const portalName = registeredRole === 'customer' ? 'Customer' : 'Partner';
+            showAlert(
+              'Portal Mismatch',
+              errData?.message || `This mobile number is registered as a ${portalName}. Please switch to the ${portalName} tab.`
+            );
+            setRole(registeredRole);
+            setLoading(false);
+            return;
+          }
           console.warn('[Login] preCheck failed, proceeding to OTP verification:', preCheckErr);
         }
 
         router.push({
           pathname: '/(auth)/otp-verify',
-          params: { phone: phoneCheck.e164, role },
+          params: {
+            phone: phoneCheck.e164,
+            role,
+            mode,
+            firstName: mode === 'register' ? firstName.trim() : undefined,
+            lastName: mode === 'register' ? lastName.trim() : undefined,
+            email: mode === 'register' ? email.trim().toLowerCase() : undefined,
+          },
         });
       }
     } catch (err: any) {
@@ -169,7 +250,8 @@ export default function LoginScreen() {
   };
 
   const isPhoneValid = phone.replace(/\D/g, '').length === 10;
-  const isSubmitDisabled = loading || (showPinInput ? pin.length < 4 : !isPhoneValid);
+  const isRegisterValid = mode === 'register' ? (firstName.trim().length > 0 && email.trim().length > 0) : true;
+  const isSubmitDisabled = loading || (showPinInput ? pin.length < 4 : (!isPhoneValid || !isRegisterValid));
 
   return (
     <View style={styles.screenContainer}>
@@ -282,10 +364,126 @@ export default function LoginScreen() {
                 </View>
               )}
 
+              {/* Mode Selector: Sign In vs New Registration */}
+              {!showPinInput && (
+                <View style={styles.modeToggleContainer}>
+                  <TouchableOpacity
+                    onPress={() => setMode('login')}
+                    activeOpacity={0.85}
+                    style={[
+                      styles.modeToggleButton,
+                      mode === 'login' ? styles.modeToggleActive : styles.modeToggleInactive,
+                    ]}
+                  >
+                    <Ionicons
+                      name="key-outline"
+                      size={14}
+                      color={mode === 'login' ? '#26007A' : '#64748B'}
+                      style={{ marginRight: 5 }}
+                    />
+                    <Text
+                      style={[
+                        styles.modeToggleText,
+                        mode === 'login' ? styles.modeToggleTextActive : styles.modeToggleTextInactive,
+                      ]}
+                    >
+                      Sign In
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => setMode('register')}
+                    activeOpacity={0.85}
+                    style={[
+                      styles.modeToggleButton,
+                      mode === 'register' ? styles.modeToggleActive : styles.modeToggleInactive,
+                    ]}
+                  >
+                    <Ionicons
+                      name="person-add-outline"
+                      size={14}
+                      color={mode === 'register' ? '#26007A' : '#64748B'}
+                      style={{ marginRight: 5 }}
+                    />
+                    <Text
+                      style={[
+                        styles.modeToggleText,
+                        mode === 'register' ? styles.modeToggleTextActive : styles.modeToggleTextInactive,
+                      ]}
+                    >
+                      New Registration
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Registration Form Fields */}
+              {mode === 'register' && !showPinInput && (
+                <>
+                  <View style={styles.fieldSection}>
+                    <Text style={styles.fieldLabel}>FIRST NAME *</Text>
+                    <View style={styles.inputContainer}>
+                      <View style={styles.pinIconPrefix}>
+                        <Ionicons name="person-outline" size={18} color="#26007A" />
+                      </View>
+                      <View style={styles.inputDivider} />
+                      <TextInput
+                        style={styles.phoneTextInput}
+                        placeholder="e.g. Rahul"
+                        placeholderTextColor="#8E84B0"
+                        value={firstName}
+                        onChangeText={setFirstName}
+                        returnKeyType="next"
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.fieldSection}>
+                    <Text style={styles.fieldLabel}>LAST NAME</Text>
+                    <View style={styles.inputContainer}>
+                      <View style={styles.pinIconPrefix}>
+                        <Ionicons name="person-outline" size={18} color="#26007A" />
+                      </View>
+                      <View style={styles.inputDivider} />
+                      <TextInput
+                        style={styles.phoneTextInput}
+                        placeholder="e.g. Sharma"
+                        placeholderTextColor="#8E84B0"
+                        value={lastName}
+                        onChangeText={setLastName}
+                        returnKeyType="next"
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.fieldSection}>
+                    <Text style={styles.fieldLabel}>EMAIL ADDRESS *</Text>
+                    <View style={styles.inputContainer}>
+                      <View style={styles.pinIconPrefix}>
+                        <Ionicons name="mail-outline" size={18} color="#26007A" />
+                      </View>
+                      <View style={styles.inputDivider} />
+                      <TextInput
+                        style={styles.phoneTextInput}
+                        placeholder="name@example.com"
+                        placeholderTextColor="#8E84B0"
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        value={email}
+                        onChangeText={setEmail}
+                        returnKeyType="next"
+                      />
+                    </View>
+                  </View>
+                </>
+              )}
+
               {/* Mobile Number Input */}
               <View style={styles.fieldSection}>
                 <View style={styles.labelRow}>
-                  <Text style={styles.fieldLabel}>MOBILE NUMBER</Text>
+                  <Text style={styles.fieldLabel}>
+                    {mode === 'register' ? 'MOBILE NUMBER (FOR SMS OTP) *' : 'MOBILE NUMBER'}
+                  </Text>
                   {showPinInput && (
                     <TouchableOpacity onPress={resetFlow} activeOpacity={0.8}>
                       <Text style={styles.changeNumberText}>Change number</Text>
@@ -371,7 +569,11 @@ export default function LoginScreen() {
                   <ActivityIndicator color="#FFFFFF" size="small" style={{ marginRight: 8 }} />
                 ) : null}
                 <Text style={styles.continueButtonText}>
-                  {showPinInput ? 'Submit PIN & Log In' : 'Continue'}
+                  {showPinInput
+                    ? 'Submit PIN & Log In'
+                    : mode === 'register'
+                    ? 'Register & Send OTP'
+                    : 'Send Login OTP'}
                 </Text>
               </TouchableOpacity>
 
@@ -384,6 +586,23 @@ export default function LoginScreen() {
                 >
                   <Ionicons name="chatbubble-ellipses-outline" size={15} color="#2D008E" style={{ marginRight: 6 }} />
                   <Text style={styles.smsOtpText}>Verify via SMS OTP</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Quick Mode Toggle Link */}
+              {!showPinInput && (
+                <TouchableOpacity
+                  onPress={() => setMode(mode === 'login' ? 'register' : 'login')}
+                  activeOpacity={0.8}
+                  style={styles.switchModeButton}
+                >
+                  <Text style={styles.switchModeText}>
+                    {mode === 'login' ? (
+                      <>New to VOLO? <Text style={styles.switchModeHighlight}>Create an account</Text></>
+                    ) : (
+                      <>Already have an account? <Text style={styles.switchModeHighlight}>Sign in here</Text></>
+                    )}
+                  </Text>
                 </TouchableOpacity>
               )}
 
@@ -548,6 +767,64 @@ const styles = StyleSheet.create({
   },
   roleTextInactive: {
     color: '#475569',
+  },
+
+  /* Mode Selector */
+  modeToggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F3EFFC',
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#E6E0F5',
+  },
+  modeToggleButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  modeToggleActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#26007A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  modeToggleInactive: {
+    backgroundColor: 'transparent',
+  },
+  modeToggleText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  modeToggleTextActive: {
+    color: '#26007A',
+    fontWeight: '800',
+  },
+  modeToggleTextInactive: {
+    color: '#64748B',
+  },
+
+  /* Switch Mode Link */
+  switchModeButton: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  switchModeText: {
+    fontSize: 12.5,
+    color: '#554C75',
+    fontWeight: '600',
+  },
+  switchModeHighlight: {
+    color: '#26007A',
+    fontWeight: '800',
+    textDecorationLine: 'underline',
   },
 
   /* Phone Input */

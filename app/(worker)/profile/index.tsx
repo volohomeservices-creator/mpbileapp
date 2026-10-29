@@ -22,7 +22,7 @@ const LANGUAGES = [
 export default function WorkerProfileScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
 
   // Platform-resilient showAlert helper
   const showAlert = (title: string, message: string) => {
@@ -43,8 +43,9 @@ export default function WorkerProfileScreen() {
 
   // Fetch Profile Query
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['worker-profile'],
+    queryKey: ['worker-profile', user?.id],
     queryFn: getWorkerProfile,
+    enabled: !!user?.id,
   });
 
   useRefreshOnFocus(refetch);
@@ -53,11 +54,9 @@ export default function WorkerProfileScreen() {
   const workerInfo = data as any;
 
   const startEditing = () => {
-    if (userProfile) {
-      setFullName(userProfile.full_name || '');
-      setEmail(userProfile.email || '');
-      setIsEditing(true);
-    }
+    setFullName(userProfile?.full_name || user?.full_name || '');
+    setEmail(userProfile?.email || (user as any)?.email || '');
+    setIsEditing(true);
   };
 
   // Update Profile Mutation
@@ -66,7 +65,7 @@ export default function WorkerProfileScreen() {
     onSuccess: (res) => {
       if (res.success) {
         Alert.alert('Success', 'Profile updated successfully.');
-        queryClient.invalidateQueries({ queryKey: ['worker-profile'] });
+        queryClient.invalidateQueries({ queryKey: ['worker-profile', user?.id] });
         setIsEditing(false);
       }
     },
@@ -78,22 +77,21 @@ export default function WorkerProfileScreen() {
   // Delete Account Mutation
   const deactivationMutation = useMutation({
     mutationFn: deactivateWorkerAccount,
-    onSuccess: () => {
-      showAlert('Account Deletion Scheduled', 'Your Captain account has been deactivated and scheduled for permanent deletion within 30 days.');
-      logout();
+    onSuccess: (data: any) => {
+      showAlert('Request Submitted', data?.message || 'Your account deactivation request has been submitted to the admin team for review. Your account will remain active until approved.');
     },
     onError: (err: any) => {
-      showAlert('Request Failed', err?.response?.data?.error ?? 'Unable to delete account. Contact support@voloapp.in.');
+      showAlert('Request Failed', err?.response?.data?.error ?? 'Unable to submit deactivation request. Contact support@voloapp.in.');
     },
   });
 
   const handleDeactivate = () => {
     Alert.alert(
-      'Delete Captain Account & Data',
-      'Are you sure you want to permanently delete your Volo Captain account?\n\n• Your active session will be terminated immediately.\n• Your onboarding and KYC document records will be purged within 30 days.\n• Statutory financial earnings & settlement invoices will be retained as legally mandated.',
+      'Request Account Deactivation',
+      'Are you sure you want to request account deactivation?\n\n• An alert will be sent to the admin team for review.\n• Your account will remain active until an administrator approves your request.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete Account', style: 'destructive', onPress: () => deactivationMutation.mutate() }
+        { text: 'Submit Request', style: 'destructive', onPress: () => deactivationMutation.mutate() }
       ]
     );
   };
@@ -137,11 +135,16 @@ export default function WorkerProfileScreen() {
               </View>
 
               <Text className="text-text-primary text-2xl font-extrabold tracking-tight leading-snug mt-1.5">
-                {userProfile?.full_name || 'Volo Captain'}
+                {userProfile?.full_name || user?.full_name || 'Volo Captain'}
               </Text>
               <Text className="text-text-secondary text-xs font-semibold mt-0.5">
-                {userProfile?.phone || '+91 9390884905'}
+                {userProfile?.phone || user?.phone || ''}
               </Text>
+              {!!(userProfile?.email || (user as any)?.email) && (
+                <Text className="text-text-secondary text-xs font-medium mt-0.5">
+                  {userProfile?.email || (user as any)?.email}
+                </Text>
+              )}
             </View>
 
             {/* Edit / Complete Profile Action */}
@@ -289,6 +292,45 @@ export default function WorkerProfileScreen() {
               <Ionicons name="chevron-forward" size={14} color="rgb(var(--text-muted))" />
             </TouchableOpacity>
 
+            {/* Performance & Ratings */}
+            <TouchableOpacity
+              onPress={() => router.push('/(worker)/profile/performance')}
+              activeOpacity={0.8}
+              className="py-4 flex-row justify-between items-center"
+            >
+              <View className="flex-row items-center">
+                <Ionicons name="stats-chart-outline" size={16} color="rgb(var(--text-secondary))" className="mr-3" />
+                <Text className="text-text-primary text-sm font-semibold">Performance & Quality Score</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={14} color="rgb(var(--text-muted))" />
+            </TouchableOpacity>
+
+            {/* Badges & Achievements */}
+            <TouchableOpacity
+              onPress={() => router.push('/(worker)/profile/badges')}
+              activeOpacity={0.8}
+              className="py-4 flex-row justify-between items-center"
+            >
+              <View className="flex-row items-center">
+                <Ionicons name="ribbon-outline" size={16} color="rgb(var(--text-secondary))" className="mr-3" />
+                <Text className="text-text-primary text-sm font-semibold">Badges & Achievements</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={14} color="rgb(var(--text-muted))" />
+            </TouchableOpacity>
+
+            {/* Refer a Captain */}
+            <TouchableOpacity
+              onPress={() => router.push('/(worker)/profile/referrals')}
+              activeOpacity={0.8}
+              className="py-4 flex-row justify-between items-center"
+            >
+              <View className="flex-row items-center">
+                <Ionicons name="gift-outline" size={16} color="rgb(var(--text-secondary))" className="mr-3" />
+                <Text className="text-text-primary text-sm font-semibold">Refer a Captain (₹500)</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={14} color="rgb(var(--text-muted))" />
+            </TouchableOpacity>
+
             {/* KYC status details */}
             <TouchableOpacity
               onPress={() => router.push('/(worker)/kyc' as any)}
@@ -309,6 +351,19 @@ export default function WorkerProfileScreen() {
                 </Text>
                 <Ionicons name="chevron-forward" size={14} color="rgb(var(--text-muted))" />
               </View>
+            </TouchableOpacity>
+
+            {/* Help & Captain Guides */}
+            <TouchableOpacity
+              onPress={() => router.push('/(worker)/profile/help-guides' as any)}
+              activeOpacity={0.8}
+              className="py-4 flex-row justify-between items-center"
+            >
+              <View className="flex-row items-center">
+                <Ionicons name="help-buoy-outline" size={16} color="rgb(var(--text-secondary))" className="mr-3" />
+                <Text className="text-text-primary text-sm font-semibold">Help & Captain Guides</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={14} color="rgb(var(--text-muted))" />
             </TouchableOpacity>
 
             {/* Language Picker */}
@@ -373,7 +428,11 @@ export default function WorkerProfileScreen() {
           </TouchableOpacity>
 
           {/* Refer & earn banner */}
-          <View className="mb-4">
+          <TouchableOpacity
+            onPress={() => router.push('/(worker)/profile/referrals')}
+            activeOpacity={0.9}
+            className="mb-4"
+          >
             <Card variant="brand-orange" className="p-5 flex-row justify-between items-center relative overflow-hidden bg-brand-orange/5">
               <View className="flex-1 pr-6">
                 <Text className="text-text-primary text-sm font-extrabold">Refer a Fellow Captain</Text>
@@ -385,7 +444,7 @@ export default function WorkerProfileScreen() {
                 <Ionicons name="gift-outline" size={20} color="rgb(var(--brand-orange))" />
               </View>
             </Card>
-          </View>
+          </TouchableOpacity>
 
         </ScrollView>
       )}

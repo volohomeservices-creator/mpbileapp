@@ -15,7 +15,7 @@ export default function WorkerJobsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState<'available' | 'history'>('available');
+  const [activeTab, setActiveTab] = useState<'available' | 'upcoming' | 'history'>('available');
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -89,14 +89,23 @@ export default function WorkerJobsScreen() {
       </View>
 
       {/* Tabs */}
-      <View className="flex-row px-6 bg-white border-b border-border-primary shadow-sm">
+      <View className="flex-row px-4 bg-white border-b border-border-primary shadow-sm">
         <TouchableOpacity
           onPress={() => setActiveTab('available')}
           activeOpacity={0.9}
           className={`flex-1 py-3 items-center ${activeTab === 'available' ? 'border-b-2 border-b-brand-orange' : ''}`}
         >
-          <Text className={`text-sm font-extrabold ${activeTab === 'available' ? 'text-brand-orange' : 'text-text-muted'}`}>
+          <Text className={`text-xs font-extrabold ${activeTab === 'available' ? 'text-brand-orange' : 'text-text-muted'}`}>
             {t('jobs.pendingOffers')}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setActiveTab('upcoming')}
+          activeOpacity={0.9}
+          className={`flex-1 py-3 items-center ${activeTab === 'upcoming' ? 'border-b-2 border-b-brand-orange' : ''}`}
+        >
+          <Text className={`text-xs font-extrabold ${activeTab === 'upcoming' ? 'text-brand-orange' : 'text-text-muted'}`}>
+            Upcoming
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -104,7 +113,7 @@ export default function WorkerJobsScreen() {
           activeOpacity={0.9}
           className={`flex-1 py-3 items-center ${activeTab === 'history' ? 'border-b-2 border-b-brand-orange' : ''}`}
         >
-          <Text className={`text-sm font-extrabold ${activeTab === 'history' ? 'text-brand-orange' : 'text-text-muted'}`}>
+          <Text className={`text-xs font-extrabold ${activeTab === 'history' ? 'text-brand-orange' : 'text-text-muted'}`}>
             {t('jobs.activePastShifts')}
           </Text>
         </TouchableOpacity>
@@ -138,11 +147,19 @@ export default function WorkerJobsScreen() {
           refreshing={false}
           ListEmptyComponent={
             <EmptyState
-              icon="briefcase-outline"
-              title={activeTab === 'available' ? t('jobs.noPendingOffers') : t('jobs.noHistoryFound')}
+              icon="calendar-outline"
+              title={
+                activeTab === 'available'
+                  ? t('jobs.noPendingOffers')
+                  : activeTab === 'upcoming'
+                  ? 'No Upcoming Jobs'
+                  : t('jobs.noHistoryFound')
+              }
               message={
                 activeTab === 'available'
                   ? t('jobs.noPendingOffersMsg')
+                  : activeTab === 'upcoming'
+                  ? 'Confirmed scheduled appointments assigned to you will be organized here.'
                   : t('jobs.noHistoryFoundMsg')
               }
             />

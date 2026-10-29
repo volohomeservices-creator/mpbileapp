@@ -30,7 +30,15 @@ import { normalizeIndianPhoneNumber } from '@/utils/phone';
 
 export default function OtpVerifyScreen() {
   const router = useRouter();
-  const { phone, role, isForgotPin } = useLocalSearchParams<{ phone: string; role: 'customer' | 'worker'; isForgotPin?: string }>();
+  const { phone, role, isForgotPin, mode, firstName, lastName, email } = useLocalSearchParams<{
+    phone: string;
+    role: 'customer' | 'worker';
+    isForgotPin?: string;
+    mode?: 'login' | 'register';
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+  }>();
   const { setAuth } = useAuthStore();
 
   // OTP State
@@ -226,7 +234,11 @@ export default function OtpVerifyScreen() {
       const idToken = await credential.user.getIdToken();
 
       // 2. Exchange Firebase token for VOLO JWT
-      const data = await verifyFirebaseToken(idToken, role);
+      const data = await verifyFirebaseToken(idToken, role, 'Mobile App', {
+        first_name: firstName,
+        last_name: lastName,
+        email: email,
+      });
 
       // 3. Persist auth state
       await setAuth(data.token, data.refreshToken, data.user);
@@ -261,8 +273,15 @@ export default function OtpVerifyScreen() {
         }
       }
     } catch (err: any) {
-      const msg = err?.response?.data?.error ?? err.message ?? 'Verification failed.';
-      Alert.alert('Error', msg);
+      const errData = err?.response?.data;
+      const isRoleMismatch = err?.response?.status === 403 && (errData?.error === 'UNAUTHORIZED_ROLE' || errData?.code === 'UNAUTHORIZED_ROLE');
+      const msg = isRoleMismatch
+        ? (errData?.message || 'This phone number is registered for the other portal. Please switch tabs to log in.')
+        : (errData?.error ?? err.message ?? 'Verification failed.');
+      Alert.alert(isRoleMismatch ? 'Portal Mismatch' : 'Error', msg);
+      if (isRoleMismatch) {
+        router.back();
+      }
       setOtp(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } finally {

@@ -73,19 +73,7 @@ import { MOBILE_CONFIG } from '@/lib/mobile-config';
 import { setupFcmNotifications, listenForFcmTokenRefresh } from '@/features/notifications/fcmSetup';
 import { registerNotificationHandlers } from '@/features/notifications/notificationHandler';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 3,
-      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
-      staleTime: MOBILE_CONFIG.QUERY_STALE_TIME_MS,
-      gcTime: MOBILE_CONFIG.QUERY_GC_TIME_MS,
-      refetchOnWindowFocus: false,
-      refetchOnMount: false,
-      refetchOnReconnect: true,
-    },
-  },
-});
+import { queryClient } from '@/lib/queryClient';
 
 function AppShell() {
   const router = useRouter();

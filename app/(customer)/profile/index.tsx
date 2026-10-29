@@ -22,7 +22,7 @@ const LANGUAGES = [
 export default function CustomerProfileScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   
   const { t, language: currentLanguage, setLanguage } = useLanguage();
   const languages = LANGUAGES;
@@ -34,8 +34,9 @@ export default function CustomerProfileScreen() {
 
   // Fetch Profile Query
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['profile'],
+    queryKey: ['profile', user?.id],
     queryFn: getProfile,
+    enabled: !!user?.id,
   });
 
   useRefreshOnFocus(refetch);
@@ -44,11 +45,9 @@ export default function CustomerProfileScreen() {
 
   // Initialize fields when editing starts
   const startEditing = () => {
-    if (userProfile) {
-      setFullName(userProfile.full_name || '');
-      setEmail(userProfile.email || '');
-      setIsEditing(true);
-    }
+    setFullName(userProfile?.full_name || user?.full_name || '');
+    setEmail(userProfile?.email || (user as any)?.email || '');
+    setIsEditing(true);
   };
 
   // Update Profile Mutation
@@ -57,7 +56,7 @@ export default function CustomerProfileScreen() {
     onSuccess: (res) => {
       if (res.success) {
         Alert.alert('Success', 'Profile updated successfully.');
-        queryClient.invalidateQueries({ queryKey: ['profile'] });
+        queryClient.invalidateQueries({ queryKey: ['profile', user?.id] });
         setIsEditing(false);
       }
     },
@@ -69,25 +68,24 @@ export default function CustomerProfileScreen() {
   // Delete Account Mutation
   const deactivationMutation = useMutation({
     mutationFn: deactivateAccount,
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       Alert.alert(
-        'Account Deletion Scheduled',
-        'Your account has been deactivated and queued for permanent deletion within 30 days.'
+        'Request Submitted',
+        data?.message || 'Your account deactivation request has been submitted to the admin team for review. Your account remains active until approved.'
       );
-      logout();
     },
     onError: (err: any) => {
-      Alert.alert('Request Failed', err?.response?.data?.error ?? 'Unable to delete account. Contact support@voloapp.in.');
+      Alert.alert('Request Failed', err?.response?.data?.error ?? 'Unable to submit deactivation request. Contact support@voloapp.in.');
     },
   });
 
   const handleDeactivate = () => {
     Alert.alert(
-      'Delete Account & Data',
-      'Are you sure you want to permanently delete your VOLO account?\n\n• Your active session will be terminated immediately.\n• Your personal profile, addresses, and saved data will be purged within 30 days.\n• Statutory financial and tax invoices will be retained as legally mandated.',
+      'Request Account Deactivation',
+      'Are you sure you want to request account deactivation?\n\n• An alert will be sent to the admin team for review.\n• Your account will remain active until an administrator approves your request.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete Account', style: 'destructive', onPress: () => deactivationMutation.mutate() }
+        { text: 'Submit Request', style: 'destructive', onPress: () => deactivationMutation.mutate() }
       ]
     );
   };
@@ -132,11 +130,16 @@ export default function CustomerProfileScreen() {
               </View>
 
               <Text className="text-text-primary text-2xl font-extrabold tracking-tight leading-snug mt-1.5">
-                {userProfile?.full_name || 'Volo Customer'}
+                {userProfile?.full_name || user?.full_name || 'Volo Customer'}
               </Text>
               <Text className="text-text-secondary text-xs font-semibold mt-0.5">
-                {userProfile?.phone || '+91 9390884905'}
+                {userProfile?.phone || user?.phone || ''}
               </Text>
+              {!!(userProfile?.email || (user as any)?.email) && (
+                <Text className="text-text-secondary text-xs font-medium mt-0.5">
+                  {userProfile?.email || (user as any)?.email}
+                </Text>
+              )}
             </View>
 
             {/* Edit / Complete Profile Action */}
@@ -233,12 +236,12 @@ export default function CustomerProfileScreen() {
 
             {/* Help & Support Card */}
             <TouchableOpacity
-              onPress={() => Alert.alert(t('profile.helpSupport'), 'Reach out to Volo partner customer support at support@volo.app or call 1800-VOLO-HELP.')}
+              onPress={() => router.push('/(customer)/profile/help-guides' as any)}
               activeOpacity={0.9}
               className="flex-1 bg-white border border-border-primary rounded-2xl p-3.5 justify-between min-h-[96px] shadow-premium active:bg-slate-50"
             >
-              <Ionicons name="headset-outline" size={20} color="rgb(var(--primary))" />
-              <Text className="text-text-primary text-xs font-extrabold mt-2 leading-tight">{t('profile.helpSupport')}</Text>
+              <Ionicons name="help-buoy-outline" size={20} color="rgb(var(--primary))" />
+              <Text className="text-text-primary text-xs font-extrabold mt-2 leading-tight">Help & Guides</Text>
             </TouchableOpacity>
           </View>
 
@@ -271,15 +274,54 @@ export default function CustomerProfileScreen() {
               <Ionicons name="chevron-forward" size={14} color="rgb(var(--text-muted))" />
             </TouchableOpacity>
 
-            {/* Plus Membership */}
+            {/* Refer & Earn */}
             <TouchableOpacity
-              onPress={() => Alert.alert(t('profile.plusMembership'), 'Volo Plus is coming soon with exclusive flat 10% cashbacks!')}
+              onPress={() => router.push('/(customer)/profile/referrals')}
               activeOpacity={0.8}
               className="py-4 flex-row justify-between items-center"
             >
               <View className="flex-row items-center">
-                <Ionicons name="shield-outline" size={16} color="rgb(var(--text-secondary))" className="mr-3" />
-                <Text className="text-text-primary text-sm font-semibold">{t('profile.plusMembership')}</Text>
+                <Ionicons name="gift-outline" size={16} color="rgb(var(--text-secondary))" className="mr-3" />
+                <Text className="text-text-primary text-sm font-semibold">Refer & Earn (₹500)</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={14} color="rgb(var(--text-muted))" />
+            </TouchableOpacity>
+
+            {/* Rewards & Volo Coins */}
+            <TouchableOpacity
+              onPress={() => router.push('/(customer)/profile/rewards')}
+              activeOpacity={0.8}
+              className="py-4 flex-row justify-between items-center"
+            >
+              <View className="flex-row items-center">
+                <Ionicons name="gift-outline" size={16} color="rgb(var(--text-secondary))" className="mr-3" />
+                <Text className="text-text-primary text-sm font-semibold">Rewards & Volo Coins</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={14} color="rgb(var(--text-muted))" />
+            </TouchableOpacity>
+
+            {/* My Reviews */}
+            <TouchableOpacity
+              onPress={() => router.push('/(customer)/profile/reviews')}
+              activeOpacity={0.8}
+              className="py-4 flex-row justify-between items-center"
+            >
+              <View className="flex-row items-center">
+                <Ionicons name="star-outline" size={16} color="rgb(var(--text-secondary))" className="mr-3" />
+                <Text className="text-text-primary text-sm font-semibold">My Reviews & Ratings</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={14} color="rgb(var(--text-muted))" />
+            </TouchableOpacity>
+
+            {/* Security PIN */}
+            <TouchableOpacity
+              onPress={() => router.push('/(customer)/profile/security-pin')}
+              activeOpacity={0.8}
+              className="py-4 flex-row justify-between items-center"
+            >
+              <View className="flex-row items-center">
+                <Ionicons name="lock-closed-outline" size={16} color="rgb(var(--text-secondary))" className="mr-3" />
+                <Text className="text-text-primary text-sm font-semibold">Security PIN Settings</Text>
               </View>
               <Ionicons name="chevron-forward" size={14} color="rgb(var(--text-muted))" />
             </TouchableOpacity>
@@ -291,7 +333,7 @@ export default function CustomerProfileScreen() {
               className="py-4 flex-row justify-between items-center"
             >
               <View className="flex-row items-center">
-                <Ionicons name="lock-closed-outline" size={16} color="rgb(var(--text-secondary))" className="mr-3" />
+                <Ionicons name="shield-checkmark-outline" size={16} color="rgb(var(--text-secondary))" className="mr-3" />
                 <Text className="text-text-primary text-sm font-semibold">{t('profile.privacyPolicy')}</Text>
               </View>
               <Ionicons name="chevron-forward" size={14} color="rgb(var(--text-muted))" />
@@ -359,7 +401,11 @@ export default function CustomerProfileScreen() {
           </TouchableOpacity>
 
           {/* Refer & earn banner */}
-          <View className="mb-4">
+          <TouchableOpacity
+            onPress={() => router.push('/(customer)/profile/referrals')}
+            activeOpacity={0.9}
+            className="mb-4"
+          >
             <Card variant="brand" className="p-5 flex-row justify-between items-center relative overflow-hidden bg-primary/5">
               <View className="flex-1 pr-6">
                 <Text className="text-text-primary text-sm font-extrabold">{t('profile.referEarnTitle')}</Text>
@@ -371,7 +417,7 @@ export default function CustomerProfileScreen() {
                 <Ionicons name="gift-outline" size={20} color="rgb(var(--primary))" />
               </View>
             </Card>
-          </View>
+          </TouchableOpacity>
 
         </ScrollView>
       )}

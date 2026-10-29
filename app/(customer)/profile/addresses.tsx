@@ -8,6 +8,7 @@ import { getAddresses, addAddress, deleteAddress, setDefaultAddress } from '@/ap
 import { useRefreshOnFocus } from '@/hooks/useRefreshOnFocus';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
+import MapPinModal from '@/components/maps/MapPinModal';
 
 export default function SavedAddressesScreen() {
   const router = useRouter();
@@ -17,6 +18,8 @@ export default function SavedAddressesScreen() {
   const [isAdding, setIsAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('HOME');
   const [newAddressText, setNewAddressText] = useState('');
+  const [newCoords, setNewCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [mapPinVisible, setMapPinVisible] = useState(false);
 
   const handleBack = () => {
     if (isAdding) {
@@ -98,6 +101,8 @@ export default function SavedAddressesScreen() {
       label: newLabel,
       address: newAddressText.trim(),
       is_default: addresses.length === 0,
+      latitude: newCoords?.lat,
+      longitude: newCoords?.lng,
     });
   };
 
@@ -186,6 +191,31 @@ export default function SavedAddressesScreen() {
                   ))}
                 </View>
               </View>
+
+              {/* Pin on Google Map button */}
+              <TouchableOpacity
+                onPress={() => setMapPinVisible(true)}
+                activeOpacity={0.8}
+                className="mb-3 py-2.5 px-3 bg-[#45016E] rounded-xl flex-row items-center justify-center gap-1.5 active:bg-[#340053] shadow-xs"
+              >
+                <Ionicons name="map" size={14} color="#FFFFFF" />
+                <Text className="text-white text-xs font-black">Pinpoint on Google Map</Text>
+              </TouchableOpacity>
+
+              {/* Pinned Coordinates Notice */}
+              {newCoords && (
+                <View className="mb-3 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-1.5">
+                    <Ionicons name="checkmark-circle" size={14} color="#059669" />
+                    <Text className="text-emerald-800 text-[11px] font-bold">
+                      Pinned: {newCoords.lat.toFixed(4)}, {newCoords.lng.toFixed(4)}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setMapPinVisible(true)}>
+                    <Text className="text-[#45016E] text-[10px] font-black uppercase">Change</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               {/* Address textarea */}
               <View className="space-y-1.5 mb-4">
@@ -285,6 +315,18 @@ export default function SavedAddressesScreen() {
           </View>
         </ScrollView>
       )}
+
+      {/* Map Pin Modal (Google Maps Pinning) */}
+      <MapPinModal
+        visible={mapPinVisible}
+        onClose={() => setMapPinVisible(false)}
+        initialLat={newCoords?.lat}
+        initialLng={newCoords?.lng}
+        onConfirm={(loc) => {
+          setNewAddressText(loc.address);
+          setNewCoords({ lat: loc.lat, lng: loc.lng });
+        }}
+      />
     </SafeAreaView>
   );
 }

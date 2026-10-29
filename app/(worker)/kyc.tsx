@@ -29,7 +29,9 @@ type DocType =
   | 'AADHAAR_BACK'
   | 'PAN_CARD'
   | 'SELFIE_VERIFICATION'
-  | 'PROFILE_PHOTO';
+  | 'PROFILE_PHOTO'
+  | 'EXPERIENCE_CERTIFICATE'
+  | 'CERTIFICATE';
 
 const DOC_CONFIGS: Array<{
   type: DocType;
@@ -63,6 +65,12 @@ const DOC_CONFIGS: Array<{
     icon: 'camera-outline',
     isCameraPreferred: true,
   },
+  {
+    type: 'EXPERIENCE_CERTIFICATE',
+    title: 'Experience / Certificate',
+    description: 'Mandatory: Trade diploma, ITI license, or work experience certificate (< 100KB).',
+    icon: 'ribbon-outline',
+  },
 ];
 
 export default function WorkerKycScreen() {
@@ -77,8 +85,9 @@ export default function WorkerKycScreen() {
   // KYC data
   const [kycState, setKycState] = useState<KycState | null>(null);
   const [documents, setDocuments] = useState<KycDocument[]>([]);
-  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
-  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [categories, setCategories] = useState<Array<{ id: string; name: string; skills?: string[] }>>([]);
+  const [selectedTrade, setSelectedTrade] = useState<string>('');
+  const [selectedSubSkills, setSelectedSubSkills] = useState<string[]>([]);
 
   // Bank & Personal fields
   const [fullName, setFullName] = useState('');
@@ -95,22 +104,38 @@ export default function WorkerKycScreen() {
       setDocuments(data.documents || []);
       setKycState(data.kycState);
 
-      // Deduplicate categories and strictly preserve active catalog
+      // Deduplicate categories and strictly preserve active catalog with admin skills
       const rawCategories = data.categories || [];
       const seenNames = new Set<string>();
-      const cleanCategories: Array<{ id: string; name: string }> = [];
+      const cleanCategories: Array<{ id: string; name: string; skills: string[] }> = [];
       rawCategories.forEach((c) => {
         const norm = (c.name || '').trim().toLowerCase();
         if (norm && !seenNames.has(norm)) {
           seenNames.add(norm);
-          cleanCategories.push({ id: c.id, name: c.name.trim() });
+          cleanCategories.push({
+            id: c.id,
+            name: c.name.trim(),
+            skills: Array.isArray(c.skills) ? c.skills : []
+          });
         }
       });
       setCategories(cleanCategories);
 
-      // Enforce single trade selection
-      const initialSkills = Array.isArray(data.skills) && data.skills.length > 0 ? [data.skills[0]] : [];
-      setSelectedSkills(initialSkills);
+      // Enforce single primary trade and load specialist sub-skills
+      const savedSkills: string[] = Array.isArray(data.skills) ? data.skills : [];
+      if (savedSkills.length > 0) {
+        const matchedCat = cleanCategories.find((c) =>
+          savedSkills.some((s) => s.toLowerCase() === c.name.toLowerCase() || c.name.toLowerCase().includes(s.toLowerCase()))
+        );
+        if (matchedCat) {
+          setSelectedTrade(matchedCat.name);
+          const subs = savedSkills.filter((s) => s.toLowerCase() !== matchedCat.name.toLowerCase());
+          setSelectedSubSkills(subs.length > 0 ? subs : (matchedCat.skills || []));
+        } else {
+          setSelectedTrade(savedSkills[0]);
+          setSelectedSubSkills(savedSkills.slice(1));
+        }
+      }
 
       if (data.bankDetails) {
         setFullName(data.bankDetails.full_name || user?.full_name || '');
@@ -215,8 +240,15 @@ export default function WorkerKycScreen() {
   };
 
   const selectTrade = (tradeName: string) => {
-    // Only 1 service trade allowed per worker
-    setSelectedSkills([tradeName]);
+    setSelectedTrade(tradeName);
+    const cat = categories.find((c) => c.name === tradeName);
+    setSelectedSubSkills(cat?.skills || []);
+  };
+
+  const toggleSubSkill = (skill: string) => {
+    setSelectedSubSkills((prev) =>
+      prev.includes(skill) ? prev.filter((s) => s !== skill) : [...prev, skill]
+    );
   };
 
   const handleSaveAndSubmit = async () => {
@@ -254,31 +286,44 @@ export default function WorkerKycScreen() {
       return;
     }
 
-    if (selectedSkills.length === 0) {
-      Alert.alert('Select Service Trade', 'Please select 1 service trade you provide.');
+    if (!selectedTrade) {
+      Alert.alert('Select Service Trade', 'Please select 1 primary service trade you provide.');
       return;
     }
 
-    if (selectedSkills.length > 1) {
-      Alert.alert('Only 1 Trade Allowed', 'You can only select 1 service trade.');
-      return;
-    }
-
-    // Check document counts
+    // Check document counts - all 5 documents are mandatory
     const uploadedTypes = documents.map((d) => d.document_type);
     const requiredDocs: DocType[] = [
       'AADHAAR_FRONT',
       'AADHAAR_BACK',
       'PAN_CARD',
       'SELFIE_VERIFICATION',
+      'EXPERIENCE_CERTIFICATE',
     ];
-    const missingDocs = requiredDocs.filter((req) => !uploadedTypes.includes(req));
+    const missingDocs = requiredDocs.filter((req) => {
+      if (req === 'EXPERIENCE_CERTIFICATE') {
+        return (
+          !uploadedTypes.includes('EXPERIENCE_CERTIFICATE') &&
+          !uploadedTypes.includes('CERTIFICATE')
+        );
+      }
+      return !uploadedTypes.includes(req);
+    });
 
     if (missingDocs.length > 0) {
-      const names = missingDocs.map((m) => m.replace(/_/g, ' ')).join(', ');
+      const docLabels: Record<string, string> = {
+        AADHAAR_FRONT: 'Aadhaar Card (Front)',
+        AADHAAR_BACK: 'Aadhaar Card (Back)',
+        PAN_CARD: 'PAN Card',
+        SELFIE_VERIFICATION: 'Live Selfie / Portrait',
+        EXPERIENCE_CERTIFICATE: 'Experience / Certificate Document',
+      };
+      const names = missingDocs
+        .map((m) => docLabels[m] || m.replace(/_/g, ' '))
+        .join('\n• ');
       Alert.alert(
-        'Missing Documents',
-        `Please upload all required identity documents before submitting:\n\n• ${names}`
+        'Mandatory Documents Required',
+        `Please upload all required identity and certificate documents before submitting:\n\n• ${names}`
       );
       return;
     }
@@ -291,7 +336,7 @@ export default function WorkerKycScreen() {
         bank_account_name: bankAccountName.trim(),
         bank_account_number: bankAccountNumber.trim(),
         bank_ifsc: bankIfsc.trim().toUpperCase(),
-        skills: selectedSkills,
+        skills: [selectedTrade, ...selectedSubSkills],
       });
 
       if (res.success) {
@@ -321,12 +366,17 @@ export default function WorkerKycScreen() {
   const isRejected = kycState?.overall_status === 'REJECTED';
   const isPendingReview =
     kycState?.overall_status === 'PENDING' &&
-    documents.filter((d) => d.document_type !== 'PROFILE_PHOTO').length >= 4;
+    documents.filter((d) => d.document_type !== 'PROFILE_PHOTO').length >= 5;
 
   const uploadedDocCount = documents.filter((d) =>
-    ['AADHAAR_FRONT', 'AADHAAR_BACK', 'PAN_CARD', 'SELFIE_VERIFICATION'].includes(
-      d.document_type
-    )
+    [
+      'AADHAAR_FRONT',
+      'AADHAAR_BACK',
+      'PAN_CARD',
+      'SELFIE_VERIFICATION',
+      'EXPERIENCE_CERTIFICATE',
+      'CERTIFICATE'
+    ].includes(d.document_type)
   ).length;
 
   if (loading) {
@@ -490,11 +540,11 @@ export default function WorkerKycScreen() {
                 <View className="mt-2.5 bg-purple-200/60 rounded-full h-2 w-full overflow-hidden">
                   <View
                     className="bg-purple-600 h-full rounded-full"
-                    style={{ width: `${(uploadedDocCount / 4) * 100}%` }}
+                    style={{ width: `${Math.min(100, (uploadedDocCount / DOC_CONFIGS.length) * 100)}%` }}
                   />
                 </View>
                 <Text className="text-purple-900 text-[10px] font-bold mt-1 text-right">
-                  {uploadedDocCount}/4 Documents Uploaded
+                  {uploadedDocCount}/{DOC_CONFIGS.length} Documents Uploaded
                 </Text>
               </View>
             </View>
@@ -507,7 +557,7 @@ export default function WorkerKycScreen() {
                 1. Required Documents
               </Text>
               <Text className="text-slate-500 text-xs font-bold">
-                {uploadedDocCount} of 4 ready
+                {uploadedDocCount} of {DOC_CONFIGS.length} ready
               </Text>
             </View>
 
@@ -528,9 +578,16 @@ export default function WorkerKycScreen() {
                           <Ionicons name={docConfig.icon} size={20} color="#3C01A7" />
                         </View>
                         <View className="flex-1">
-                          <Text className="text-slate-900 font-extrabold text-sm">
-                            {docConfig.title}
-                          </Text>
+                          <View className="flex-row items-center gap-1.5 flex-wrap">
+                            <Text className="text-slate-900 font-extrabold text-sm">
+                              {docConfig.title}
+                            </Text>
+                            <View className="bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
+                              <Text className="text-rose-600 text-[9px] font-black uppercase">
+                                Mandatory *
+                              </Text>
+                            </View>
+                          </View>
                           <Text className="text-slate-500 text-xs mt-0.5 leading-snug">
                             {docConfig.description}
                           </Text>
@@ -787,13 +844,13 @@ export default function WorkerKycScreen() {
               </View>
             </View>
             <Text className="text-slate-400 text-xs mb-3.5">
-              Select your primary service trade. Workers can only be registered for 1 category.
+              Select your primary service trade. Captains can only be registered for 1 category.
             </Text>
 
             <View className="flex-row flex-wrap gap-2">
               {categories.length > 0 ? (
                 categories.map((cat) => {
-                  const isSelected = selectedSkills[0] === cat.name;
+                  const isSelected = selectedTrade === cat.name;
                   return (
                     <TouchableOpacity
                       key={cat.id}
@@ -824,6 +881,77 @@ export default function WorkerKycScreen() {
                 <Text className="text-slate-400 text-xs">No service categories loaded.</Text>
               )}
             </View>
+
+            {/* Quick list of 4–5 specific skill checkboxes under the selected main category */}
+            {(() => {
+              const activeCategory = categories.find((c) => c.name === selectedTrade);
+              if (!activeCategory) return null;
+
+              return (
+                <View className="mt-4 bg-purple-50/70 border border-purple-200 rounded-2xl p-4">
+                  <View className="flex-row items-center justify-between mb-2">
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="build" size={16} color="#3C01A7" />
+                      <Text className="text-xs font-black text-slate-900">
+                        Specific Skills in {activeCategory.name}
+                      </Text>
+                    </View>
+                    <View className="bg-white px-2 py-0.5 rounded-full border border-purple-200">
+                      <Text className="text-[10px] font-black text-[#3C01A7]">
+                        {selectedSubSkills.length} of {activeCategory.skills?.length || 0}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text className="text-slate-500 text-[11px] mb-3">
+                    Check the specific tasks you handle (managed via Admin Dashboard):
+                  </Text>
+
+                  {activeCategory.skills && activeCategory.skills.length > 0 ? (
+                    <View className="gap-2">
+                      {activeCategory.skills.map((skill) => {
+                        const isSkillChecked = selectedSubSkills.includes(skill);
+                        return (
+                          <TouchableOpacity
+                            key={skill}
+                            onPress={() => toggleSubSkill(skill)}
+                            activeOpacity={0.7}
+                            className={`p-3 rounded-xl border flex-row items-center justify-between ${
+                              isSkillChecked
+                                ? 'bg-[#3C01A7] border-[#3C01A7]'
+                                : 'bg-white border-slate-200'
+                            }`}
+                          >
+                            <View className="flex-row items-center gap-2.5 flex-1 pr-2">
+                              <Ionicons
+                                name={isSkillChecked ? 'checkbox' : 'square-outline'}
+                                size={18}
+                                color={isSkillChecked ? '#FFFFFF' : '#94A3B8'}
+                              />
+                              <Text
+                                className={`text-xs font-bold ${
+                                  isSkillChecked ? 'text-white' : 'text-slate-800'
+                                }`}
+                              >
+                                {skill}
+                              </Text>
+                            </View>
+                            {isSkillChecked && (
+                              <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <View className="bg-white p-3 rounded-xl border border-dashed border-slate-200">
+                      <Text className="text-xs text-slate-500 text-center">
+                        All standard services in this trade are assigned automatically.
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
           </View>
         </ScrollView>
 

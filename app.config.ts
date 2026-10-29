@@ -34,7 +34,7 @@ export default ({ config }: ConfigContext): any => ({
     supportsTablet: false,
     googleServicesFile: './GoogleService-Info.plist',
     config: {
-      googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyDJ3DI7eMgk6J-YkflEw7gVDqr07uwxcg',
+      googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyApmVER8aFKsry7OpTFJj8iCBE1XedX9gQ',
     },
     infoPlist: {
       NSLocationWhenInUseUsageDescription:
@@ -51,7 +51,7 @@ export default ({ config }: ConfigContext): any => ({
     googleServicesFile: './google-services.json',
     config: {
       googleMaps: {
-        apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyC7lRr_t9cXvXFx2lbNhJwQg2hRxbs9eQ8',
+        apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyApmVER8aFKsry7OpTFJj8iCBE1XedX9gQ',
       },
     },
     adaptiveIcon: {
@@ -87,7 +87,7 @@ export default ({ config }: ConfigContext): any => ({
       'expo-location',
       {
         locationWhenInUsePermission:
-          'VOLO uses your location to show available home services near you and navigate technicians to service locations.',
+          'VOLO uses your location to show available home services near you and navigate captains to service locations.',
         isAndroidBackgroundLocationEnabled: false,
       },
     ],

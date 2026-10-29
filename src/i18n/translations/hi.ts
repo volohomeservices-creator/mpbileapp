@@ -58,12 +58,10 @@ export default {
     bookService: 'सेवा बुक करें',
     noServices: 'कोई सेवा उपलब्ध नहीं',
     volobenefits: 'वोलो लाभ',
-    voloPrime: 'वोलो प्राइम',
     myWallet: 'मेरा वॉलेट',
     referEarn: 'रेफर करें और कमाएँ',
     addresses: 'पते',
-    voloPrimeAlert: 'VOLO प्राइम वर्तमान में वेब ऐप पर सक्रिय है! मोबाइल सपोर्ट जल्द आएगा।',
-    referEarnAlert: 'अपने दोस्तों को आमंत्रित करें और ₹150 रिवार्ड कॉइन्स कमाएँ!',
+    referEarnAlert: 'अपने दोस्तों को आमंत्रित करें और नकद पुरस्कार कमाएँ!',
   },
 
   // Customer Booking Alerts

@@ -8,12 +8,18 @@ import { LoginResponse, MobileRefreshResponse, AuthUser } from '@volo/shared-typ
 export async function verifyFirebaseToken(
   idToken: string,
   role: 'customer' | 'worker',
-  deviceName?: string
+  deviceName?: string,
+  extra?: {
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+  }
 ): Promise<LoginResponse> {
   return apiPost<LoginResponse>('/api/auth/verify-firebase-token', {
     idToken,
     role,
     deviceName: deviceName ?? 'Mobile App',
+    ...(extra || {}),
   });
 }
 
@@ -41,13 +47,15 @@ const formatPhone = (phone: string) => {
 /**
  * Pre-check auth method for a mobile phone number.
  */
-export async function preCheck(phone: string): Promise<{
+export async function preCheck(phone: string, role?: 'customer' | 'worker'): Promise<{
   authMethod: 'pin_required' | 'otp_required' | 'trusted_device';
   isRegistered: boolean;
   hasEmail: boolean;
+  userRole?: 'customer' | 'worker';
 }> {
   return apiPost('/api/auth/pre-check', {
     phone: formatPhone(phone),
+    role,
     recaptchaToken: 'BYPASS_TOKEN_VOLO_DEV_SECRET',
   });
 }
@@ -55,10 +63,11 @@ export async function preCheck(phone: string): Promise<{
 /**
  * Log in via PIN.
  */
-export async function pinLogin(phone: string, pin: string): Promise<LoginResponse> {
+export async function pinLogin(phone: string, pin: string, role?: 'customer' | 'worker'): Promise<LoginResponse> {
   return apiPost('/api/auth/pin-login', {
     phone: formatPhone(phone),
     pin,
+    role,
     recaptchaToken: 'BYPASS_TOKEN_VOLO_DEV_SECRET',
   });
 }

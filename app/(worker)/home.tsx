@@ -19,7 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import {
   getWorkerDashboard,
@@ -42,7 +42,12 @@ import { BookingStatus } from '@volo/shared-types';
 import { getPublicMediaUrl } from '@/utils/media';
 import { Skeleton, WorkerHomeSkeleton } from '@/components/ui/Skeleton';
 import { LocationPickerModal } from '@/components/LocationPickerModal';
+import { EmergencySupportModal } from '@/components/EmergencySupportModal';
 import { storage } from '@/utils/storage';
+import { useGuidance } from '@/hooks/useGuidance';
+import { PersistentGuidanceBanner } from '@/components/guidance/PersistentGuidanceBanner';
+import { WelcomeOrientationModal } from '@/components/guidance/WelcomeOrientationModal';
+import { InteractiveFeatureTour } from '@/components/guidance/InteractiveFeatureTour';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -57,11 +62,18 @@ const showAlert = (title: string, message: string) => {
 
 // Countdown Timer Component for Direct/Manual Offers
 const OfferTimer = ({ expiresAt, onExpire }: { expiresAt: string; onExpire: () => void }) => {
-  const [timeLeft, setTimeLeft] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(() => {
+    return Math.max(Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000), 0);
+  });
 
   useEffect(() => {
     const calc = () => Math.max(Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000), 0);
-    setTimeLeft(calc());
+    const initial = calc();
+    setTimeLeft(initial);
+    if (initial <= 0) {
+      onExpire();
+      return;
+    }
     const timer = setInterval(() => {
       const left = calc();
       setTimeLeft(left);
@@ -77,11 +89,7 @@ const OfferTimer = ({ expiresAt, onExpire }: { expiresAt: string; onExpire: () =
   const secs = timeLeft % 60;
 
   if (timeLeft <= 0) {
-    return (
-      <View className="bg-red-50 px-2 py-0.5 rounded-full border border-red-200">
-        <Text className="text-red-600 text-[10px] font-bold">Expired</Text>
-      </View>
-    );
+    return null;
   }
 
   return (
@@ -98,12 +106,14 @@ export default function WorkerHomeScreen() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { t } = useLanguage();
+  const guidance = useGuidance();
 
   // State
   const [isOnline, setIsOnline] = useState(true);
   const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [serviceCity, setServiceCity] = useState('Hyderabad');
   const [locationModalVisible, setLocationModalVisible] = useState(false);
+  const [emergencyModalVisible, setEmergencyModalVisible] = useState(false);
 
   // Double-tap hardware back button to exit cleanly on Android
   const lastBackPressTime = useRef(0);
@@ -152,8 +162,9 @@ export default function WorkerHomeScreen() {
     isLoading: dashLoading,
     refetch: refetchDash,
   } = useQuery({
-    queryKey: ['worker-dashboard'],
+    queryKey: ['worker-dashboard', user?.id],
     queryFn: getWorkerDashboard,
+    enabled: !!user?.id,
   });
 
   const {
@@ -161,9 +172,9 @@ export default function WorkerHomeScreen() {
     isLoading: jobsLoading,
     refetch: refetchJobs,
   } = useQuery({
-    queryKey: ['worker-available-jobs'],
+    queryKey: ['worker-available-jobs', user?.id],
     queryFn: () => getAvailableJobs('available'),
-    enabled: isOnline,
+    enabled: isOnline && !!user?.id,
     refetchInterval: 15000,
     refetchIntervalInBackground: false,
   });
@@ -173,8 +184,9 @@ export default function WorkerHomeScreen() {
     isLoading: activeLoading,
     refetch: refetchActive,
   } = useQuery({
-    queryKey: ['worker-active-job'],
+    queryKey: ['worker-active-job', user?.id],
     queryFn: getCurrentJob,
+    enabled: !!user?.id,
     refetchInterval: 12000,
     refetchIntervalInBackground: false,
   });
@@ -183,9 +195,9 @@ export default function WorkerHomeScreen() {
     data: manualOffersData,
     refetch: refetchManual,
   } = useQuery({
-    queryKey: ['worker-manual-offers'],
+    queryKey: ['worker-manual-offers', user?.id],
     queryFn: getManualOffers,
-    enabled: isOnline,
+    enabled: isOnline && !!user?.id,
     refetchInterval: 10000,
   });
 
@@ -236,8 +248,19 @@ export default function WorkerHomeScreen() {
     ) || null;
 
   const stats = dashboardData?.stats ?? { today_earnings: 0, completed_today: 0, rating: 5.0 };
-  const availableJobs = availableData?.jobs ?? [];
-  const manualOffers = manualOffersData?.offers ?? [];
+  const [expiredManualIds, setExpiredManualIds] = useState<Set<string>>(new Set());
+
+  // Strictly filter out any offers older than 2 minutes (120s)
+  const availableJobs = (availableData?.jobs ?? []).filter((j: any) => {
+    const exp = j.expiresAt ? new Date(j.expiresAt).getTime() : (new Date(j.created_at || Date.now()).getTime() + 120000);
+    return exp > Date.now();
+  });
+
+  const manualOffers = (manualOffersData?.offers ?? []).filter((o: any) => {
+    if (expiredManualIds.has(o.id)) return false;
+    const exp = o.expiresAt ? new Date(o.expiresAt).getTime() : 0;
+    return exp > Date.now();
+  });
 
   // Active Job resolution from database
   const rawActiveJob = activeJobData?.job || dashboardData?.activeJob || null;
@@ -466,13 +489,14 @@ export default function WorkerHomeScreen() {
   };
 
   const activeStepIndex = activeJob ? getActiveJobStep(activeJob.status) : 0;
-  const workerFullName = user?.full_name || (dashboardData as any)?.worker?.full_name || 'Captain';
+  const isDashboardForCurrentUser = (dashboardData as any)?.user?.id === user?.id || (dashboardData as any)?.worker?.id === user?.id;
+  const workerFullName = user?.full_name || (isDashboardForCurrentUser ? (dashboardData as any)?.worker?.full_name : null) || 'Captain';
   const cleanFullName = workerFullName.replace(/^captain\s+/i, '').trim();
   const displayCaptainName = cleanFullName ? `Captain ${cleanFullName}` : 'Captain';
   const workerInitial = (cleanFullName || workerFullName).charAt(0).toUpperCase() || 'C';
 
   // Real profile avatar URL from Supabase storage
-  const rawAvatarPath = (user as any)?.avatar_url || (dashboardData as any)?.user?.avatar_url || (dashboardData as any)?.worker?.avatar_url;
+  const rawAvatarPath = (user as any)?.avatar_url || (isDashboardForCurrentUser ? ((dashboardData as any)?.user?.avatar_url || (dashboardData as any)?.worker?.avatar_url) : null);
   const avatarUrl = getPublicMediaUrl(rawAvatarPath, 'profile-images');
 
   // Real distance calculation to active job
@@ -514,8 +538,18 @@ export default function WorkerHomeScreen() {
           <Ionicons name="chevron-down" size={11} color="#64748B" />
         </TouchableOpacity>
 
-        {/* Right: Actions (Notification Bell & Profile Avatar) */}
+        {/* Right: Actions (Emergency SOS, Notification Bell & Profile Avatar) */}
         <View className="flex-row items-center gap-2">
+          {/* Emergency SOS Button */}
+          <TouchableOpacity
+            onPress={() => setEmergencyModalVisible(true)}
+            activeOpacity={0.8}
+            className="w-9 h-9 rounded-full bg-rose-50 border border-rose-200 items-center justify-center relative active:bg-rose-100"
+          >
+            <MaterialCommunityIcons name="shield-alert" size={17} color="#E11D48" />
+            <View className="w-2 h-2 rounded-full bg-[#EF4444] absolute top-1 right-1 border border-white" />
+          </TouchableOpacity>
+
           {/* Notification Button */}
           <TouchableOpacity
             onPress={() => router.push('/(worker)/notifications')}
@@ -555,6 +589,11 @@ export default function WorkerHomeScreen() {
           contentContainerStyle={{ paddingBottom: 130 }}
           showsVerticalScrollIndicator={false}
         >
+          {/* In-App Captain Profile Guidance Banner (Auto-dismisses when 100% complete) */}
+          <PersistentGuidanceBanner
+            completion={guidance.completion}
+            role="worker"
+          />
           {/* ========================================================================= */}
           {/* GREETING & DUTY STATUS CARD */}
           {/* ========================================================================= */}
@@ -684,7 +723,7 @@ export default function WorkerHomeScreen() {
                 )}
                 <View className="relative z-10 max-w-[85%]">
                   <View className="bg-amber-400/20 border border-amber-300/30 px-2.5 py-0.5 rounded-full self-start mb-1.5 flex-row items-center gap-1">
-                    <Ionicons name="sparkles" size={10} color="#FBBF24" />
+                    <Ionicons name="star" size={10} color="#FBBF24" />
                     <Text className="text-amber-200 text-[9px] font-black uppercase tracking-wider">
                       {workerHeroBanner.discount_label || 'CAPTAIN UPDATE'}
                     </Text>
@@ -1078,7 +1117,13 @@ export default function WorkerHomeScreen() {
                           📍 {offer.distanceKm} km away
                         </Text>
                       </View>
-                      <OfferTimer expiresAt={offer.expiresAt} onExpire={refetchManual} />
+                      <OfferTimer
+                        expiresAt={offer.expiresAt} 
+                        onExpire={() => {
+                          setExpiredManualIds(prev => new Set(prev).add(offer.id));
+                          refetchManual();
+                        }} 
+                      />
                     </View>
 
                     <View className="flex-row items-center justify-between py-2 border-t border-slate-100 my-1">
@@ -1227,7 +1272,7 @@ export default function WorkerHomeScreen() {
                       ) : null}
                       <View style={{ position: 'relative', zIndex: 10, maxWidth: '85%' }}>
                         <View className="bg-emerald-500/25 border border-emerald-400/30 px-2.5 py-0.5 rounded-full self-start mb-1 flex-row items-center gap-1 backdrop-blur-md">
-                          <Ionicons name="sparkles" size={10} color="#34D399" />
+                          <Ionicons name="star" size={10} color="#34D399" />
                           <Text className="text-emerald-300 text-[9px] font-black uppercase tracking-wider">
                             {b.discount_label || 'CAPTAIN ANNOUNCEMENT'}
                           </Text>
@@ -1302,11 +1347,17 @@ export default function WorkerHomeScreen() {
                   {availableJobs.map((job: any) => {
                     const estEarning = job.estimated_earnings || (job.total_amount ? (job.total_amount * 0.85).toFixed(0) : 0);
                     const jobImgUrl = getPublicMediaUrl(job.service?.icon_url || job.service_items?.icon_url, 'service-images');
-                    const formattedTime = job.scheduled_at
-                      ? new Date(job.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                      : job.created_at
-                        ? new Date(job.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                        : 'Flexible Time';
+                    const isScheduledJob = !!job.scheduled_at;
+                    const formattedScheduledDate = job.scheduled_at
+                      ? new Date(job.scheduled_at).toLocaleDateString('en-IN', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : (job.created_at
+                          ? new Date(job.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          : 'Flexible');
 
                     return (
                       <TouchableOpacity
@@ -1330,19 +1381,39 @@ export default function WorkerHomeScreen() {
 
                         {/* Center: Real Details */}
                         <View className="flex-1 mr-2">
-                          <Text className="text-slate-900 text-xs font-extrabold" numberOfLines={1}>
-                            {job.service?.name || job.service_name || 'Home Service'}
-                          </Text>
-                          <View className="flex-row items-center gap-1 mt-0.5">
+                          <View className="flex-row items-center justify-between">
+                            <Text className="text-slate-900 text-xs font-extrabold flex-1 mr-1" numberOfLines={1}>
+                              {job.service?.name || job.service_name || 'Home Service'}
+                            </Text>
+                            <OfferTimer
+                              expiresAt={job.expiresAt || new Date(new Date(job.created_at || Date.now()).getTime() + 120000).toISOString()}
+                              onExpire={() => refetchJobs()}
+                            />
+                          </View>
+
+                          {/* Scheduled vs Instant Badge */}
+                          <View className="flex-row items-center gap-1 mt-1">
+                            {isScheduledJob ? (
+                              <View className="bg-purple-100 border border-purple-200/90 px-1.5 py-0.5 rounded-md flex-row items-center gap-1">
+                                <Ionicons name="calendar" size={10} color="#6D28D9" />
+                                <Text className="text-purple-900 text-[9px] font-extrabold uppercase font-mono">
+                                  {formattedScheduledDate}
+                                </Text>
+                              </View>
+                            ) : (
+                              <View className="bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded-md flex-row items-center gap-1">
+                                <Ionicons name="flash" size={10} color="#D97706" />
+                                <Text className="text-amber-900 text-[9px] font-extrabold uppercase font-mono">
+                                  Instant Job
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+
+                          <View className="flex-row items-center gap-1 mt-1">
                             <Ionicons name="location-outline" size={11} color="#64748B" />
                             <Text className="text-slate-500 text-[10px] font-medium" numberOfLines={1}>
                               {job.locality || job.address_line || 'Nearby Customer'}
-                            </Text>
-                          </View>
-                          <View className="flex-row items-center gap-1 mt-0.5">
-                            <Ionicons name="time-outline" size={11} color="#64748B" />
-                            <Text className="text-slate-500 text-[10px] font-medium">
-                              {formattedTime}
                             </Text>
                           </View>
                           <View className="flex-row items-center gap-1 mt-0.5">
@@ -1382,6 +1453,38 @@ export default function WorkerHomeScreen() {
         onSelectCity={handleSelectCity}
         title="Operating City"
         subtitle="Select the city where you are available to accept jobs"
+      />
+
+      {/* Worker Emergency & Operations Desk Modal */}
+      <EmergencySupportModal
+        visible={emergencyModalVisible}
+        onClose={() => setEmergencyModalVisible(false)}
+        role="worker"
+        activeBookingId={activeJob?.id}
+      />
+
+      {/* Welcome Orientation Modal (First-time or restarted onboarding) */}
+      <WelcomeOrientationModal
+        visible={guidance.shouldShowWelcome}
+        userName={user?.full_name}
+        role="worker"
+        onGetStarted={() => {
+          guidance.dismissWelcome();
+          guidance.startTour('worker_welcome_tour');
+        }}
+        onExploreOnMyOwn={guidance.dismissWelcome}
+      />
+
+      {/* Interactive Guided Tour */}
+      <InteractiveFeatureTour
+        visible={Boolean(guidance.activeTour)}
+        step={guidance.activeTourStep}
+        stepIndex={guidance.activeStepIndex}
+        totalSteps={guidance.totalSteps}
+        onNext={guidance.nextTourStep}
+        onPrev={guidance.prevTourStep}
+        onSkip={guidance.skipTour}
+        tourTitle={guidance.activeTour?.title}
       />
     </SafeAreaView>
   );

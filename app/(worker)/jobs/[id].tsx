@@ -68,6 +68,34 @@ export default function WorkerJobDetailScreen() {
 
   const job = data ? ((data as any).job || data) : null;
 
+  // 2-Minute Offer Expiration Countdown Timer for Worker
+  const [offerSecondsLeft, setOfferSecondsLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!job || ![BookingStatus.WORKER_ASSIGNED, BookingStatus.PENDING_ASSIGNMENT].includes(job.status)) {
+      setOfferSecondsLeft(null);
+      return;
+    }
+
+    const expiresAtMs = job.expiresAt
+      ? new Date(job.expiresAt).getTime()
+      : (job.created_at ? new Date(job.created_at).getTime() + 120000 : Date.now() + 120000);
+
+    const calcLeft = () => Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
+
+    setOfferSecondsLeft(calcLeft());
+
+    const timer = setInterval(() => {
+      const left = calcLeft();
+      setOfferSecondsLeft(left);
+      if (left <= 0) {
+        clearInterval(timer);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [job?.expiresAt, job?.created_at, job?.status]);
+
   // Poll job status and details dynamically
   const isPolled =
     job &&
@@ -176,7 +204,18 @@ export default function WorkerJobDetailScreen() {
   const acceptMutation = useMutation({
     mutationFn: () => acceptJob(id),
     onSuccess: () => {
-      showAlert(t('workerHome.jobAccepted'), t('workerHome.readyToStart'));
+      const isSched = !!(job?.scheduled_at && new Date(job.scheduled_at) > new Date());
+      if (isSched) {
+        const timeStr = new Date(job.scheduled_at).toLocaleDateString('en-IN', {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        showAlert('Scheduled Shift Confirmed! 📅', `Shift confirmed for ${timeStr}. This appointment is saved in your Upcoming Jobs list.`);
+      } else {
+        showAlert(t('workerHome.jobAccepted'), t('workerHome.readyToStart'));
+      }
       queryClient.invalidateQueries({ queryKey: ['worker-job-detail', id] });
       queryClient.invalidateQueries({ queryKey: ['worker-dashboard'] });
     },
@@ -195,6 +234,29 @@ export default function WorkerJobDetailScreen() {
   });
 
   const handleStartJourney = async () => {
+    const isFutureScheduled = !!(job?.scheduled_at && (new Date(job.scheduled_at).getTime() - Date.now() > 45 * 60 * 1000));
+    if (isFutureScheduled) {
+      const schedTimeStr = new Date(job.scheduled_at).toLocaleDateString('en-IN', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      const proceed = Platform.OS === 'web'
+        ? window.confirm(`This job is scheduled for ${schedTimeStr}. Are you sure you want to start journey early?`)
+        : await new Promise<boolean>((resolve) => {
+            Alert.alert(
+              'Scheduled Shift Early Start',
+              `This job is scheduled for ${schedTimeStr}. Do you want to start journey now?`,
+              [
+                { text: 'Wait', style: 'cancel', onPress: () => resolve(false) },
+                { text: 'Start Journey', onPress: () => resolve(true) }
+              ]
+            );
+          });
+      if (!proceed) return;
+    }
+
     setActionLoading(true);
     try {
       const res = await startJourney(id);
@@ -379,55 +441,118 @@ export default function WorkerJobDetailScreen() {
 
     switch (job.status) {
       case BookingStatus.WORKER_ASSIGNED:
-      case BookingStatus.PENDING_ASSIGNMENT:
+      case BookingStatus.PENDING_ASSIGNMENT: {
+        const isOfferExpired = offerSecondsLeft !== null && offerSecondsLeft <= 0;
+        const mins = Math.floor((offerSecondsLeft || 0) / 60);
+        const secs = (offerSecondsLeft || 0) % 60;
+        const countdownStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
         return (
-          <View className="flex-row gap-3 mb-8">
-            <TouchableOpacity
-              onPress={() => rejectMutation.mutate()}
-              disabled={rejectMutation.isPending || acceptMutation.isPending}
-              activeOpacity={0.8}
-              className="flex-1 h-13 rounded-2xl border border-red-200 bg-red-50/80 justify-center items-center flex-row gap-1.5"
-            >
-              {rejectMutation.isPending ? (
-                <ActivityIndicator size="small" color="#DC2626" />
+          <View className="mb-8">
+            {/* Offer Timer Banner */}
+            <View className="p-3 bg-purple-50 rounded-2xl border border-purple-200/80 mb-3 flex-row items-center justify-between">
+              <View className="flex-row items-center gap-2 flex-1 mr-2">
+                <Ionicons name={job?.scheduled_at ? "calendar" : "flash"} size={16} color="#3C01A7" />
+                <View className="flex-1">
+                  <Text className="text-[#3C01A7] font-extrabold text-xs">
+                    {job?.scheduled_at ? '📅 Scheduled Order Offer' : '⚡ New Order Offer (2-Min Window)'}
+                  </Text>
+                  <Text className="text-slate-500 text-[10px]">
+                    {job?.scheduled_at
+                      ? `Appointment: ${new Date(job.scheduled_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                      : (isOfferExpired ? 'Offer window expired' : 'Accept before timer expires to confirm order')}
+                  </Text>
+                </View>
+              </View>
+              <View className={`px-2.5 py-1 rounded-xl border ${isOfferExpired ? 'bg-red-50 border-red-200' : 'bg-white border-purple-200'}`}>
+                <Text className={`text-xs font-black font-mono ${isOfferExpired ? 'text-red-600' : 'text-[#3C01A7]'}`}>
+                  {isOfferExpired ? 'EXPIRED' : countdownStr}
+                </Text>
+              </View>
+            </View>
+
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                onPress={() => rejectMutation.mutate()}
+                disabled={rejectMutation.isPending || acceptMutation.isPending}
+                activeOpacity={0.8}
+                className="flex-1 h-13 rounded-2xl border border-red-200 bg-red-50/80 justify-center items-center flex-row gap-1.5"
+              >
+                {rejectMutation.isPending ? (
+                  <ActivityIndicator size="small" color="#DC2626" />
+                ) : (
+                  <>
+                    <Ionicons name="close-circle-outline" size={18} color="#DC2626" />
+                    <Text className="text-red-600 font-extrabold text-sm">{t('jobs.decline') || 'Decline'}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {isOfferExpired ? (
+                <View className="flex-1 h-13 rounded-2xl bg-slate-100 border border-slate-200 justify-center items-center">
+                  <Text className="text-slate-400 font-extrabold text-xs">Offer Expired</Text>
+                </View>
               ) : (
-                <>
-                  <Ionicons name="close-circle-outline" size={18} color="#DC2626" />
-                  <Text className="text-red-600 font-extrabold text-sm">{t('jobs.decline') || 'Decline'}</Text>
-                </>
+                <TouchableOpacity
+                  onPress={() => acceptMutation.mutate()}
+                  disabled={rejectMutation.isPending || acceptMutation.isPending}
+                  activeOpacity={0.85}
+                  className="flex-1 h-13 rounded-2xl bg-[#3C01A7] shadow-md shadow-[#3C01A7]/30 justify-center items-center flex-row gap-2"
+                >
+                  {acceptMutation.isPending ? (
+                    <ActivityIndicator size="small" color="white" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-circle" size={19} color="white" />
+                      <Text className="text-white font-extrabold text-sm">{t('jobs.acceptShift') || 'Accept Shift'}</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
               )}
-            </TouchableOpacity>
+            </View>
+          </View>
+        );
+      }
+
+      case BookingStatus.WORKER_ACCEPTED: {
+        const isFuture = !!(job?.scheduled_at && new Date(job.scheduled_at) > new Date());
+        return (
+          <View className="mb-8">
+            {isFuture && (
+              <View className="bg-purple-50 border border-purple-200 p-4 rounded-2xl mb-3 flex-row items-center gap-3">
+                <Ionicons name="calendar-outline" size={20} color="#7C3AED" />
+                <View className="flex-1">
+                  <Text className="text-purple-950 font-extrabold text-xs">
+                    Reserved Scheduled Shift 📅
+                  </Text>
+                  <Text className="text-purple-700 text-[11px] font-semibold mt-0.5">
+                    {new Date(job.scheduled_at).toLocaleDateString('en-IN', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </Text>
+                  <Text className="text-purple-600 text-[10px] mt-0.5">
+                    Job is locked in your Upcoming schedule. Start journey closer to appointment time.
+                  </Text>
+                </View>
+              </View>
+            )}
+
             <TouchableOpacity
-              onPress={() => acceptMutation.mutate()}
-              disabled={rejectMutation.isPending || acceptMutation.isPending}
+              onPress={handleStartJourney}
               activeOpacity={0.85}
-              className="flex-1 h-13 rounded-2xl bg-[#3C01A7] shadow-md shadow-[#3C01A7]/30 justify-center items-center flex-row gap-2"
+              className="w-full h-14 rounded-2xl bg-[#3C01A7] shadow-premium flex-row justify-center items-center gap-2 active:scale-[0.99]"
             >
-              {acceptMutation.isPending ? (
-                <ActivityIndicator size="small" color="white" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={19} color="white" />
-                  <Text className="text-white font-extrabold text-sm">{t('jobs.acceptShift') || 'Accept Shift'}</Text>
-                </>
-              )}
+              <Ionicons name="navigate-outline" size={20} color="white" />
+              <Text className="text-white font-extrabold text-base">
+                {isFuture ? 'Start Journey to Location' : (t('jobs.startJourneyBtn') || 'Start Journey to Location →')}
+              </Text>
             </TouchableOpacity>
           </View>
         );
-
-      case BookingStatus.WORKER_ACCEPTED:
-        return (
-          <TouchableOpacity
-            onPress={handleStartJourney}
-            activeOpacity={0.85}
-            className="w-full h-14 rounded-2xl bg-[#3C01A7] shadow-premium flex-row justify-center items-center gap-2 mb-8 active:scale-[0.99]"
-          >
-            <Ionicons name="navigate-outline" size={20} color="white" />
-            <Text className="text-white font-extrabold text-base">
-              {t('jobs.startJourneyBtn') || 'Start Journey to Location →'}
-            </Text>
-          </TouchableOpacity>
-        );
+      }
 
       case BookingStatus.ON_THE_WAY:
         return (
@@ -868,7 +993,7 @@ export default function WorkerJobDetailScreen() {
                 workerLng={currentCoords?.lng}
                 destLat={job.lat}
                 destLng={job.lng}
-                workerName="You (Worker)"
+                workerName="You (Captain)"
                 statusText={getStatusLabel(job.status)}
               />
 

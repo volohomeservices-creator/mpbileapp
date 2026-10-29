@@ -58,6 +58,42 @@ export default function BookingDetailScreen() {
 
   const booking = data?.booking;
 
+  // 2-Minute cancellation countdown timer for customer
+  const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!booking || booking.status !== BookingStatus.PENDING_ASSIGNMENT || booking.worker_id) {
+      setSecondsRemaining(null);
+      return;
+    }
+
+    const calculateRemaining = () => {
+      const createdTime = new Date(booking.created_at).getTime();
+      const elapsed = Date.now() - createdTime;
+      const totalBuffer = 2 * 60 * 1000; // 2 minutes (120 seconds)
+      const remainingMs = totalBuffer - elapsed;
+      return Math.max(0, Math.floor(remainingMs / 1000));
+    };
+
+    setSecondsRemaining(calculateRemaining());
+
+    const timer = setInterval(() => {
+      const rem = calculateRemaining();
+      setSecondsRemaining(rem);
+      if (rem <= 0) {
+        clearInterval(timer);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [booking?.created_at, booking?.status, booking?.worker_id]);
+
+  const formatCountdown = (secs: number) => {
+    const mins = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${String(mins).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
   // Poll booking status and worker location dynamically
   const getPollingInterval = () => {
     if (!booking) return null;
@@ -164,9 +200,9 @@ export default function BookingDetailScreen() {
       case BookingStatus.WORKER_ACCEPTED:
         return t('bookings.worker_accepted') || 'Booking Confirmed';
       case BookingStatus.ON_THE_WAY:
-        return t('bookings.on_the_way') || 'Technician En Route';
+        return t('bookings.on_the_way') || 'captain En Route';
       case BookingStatus.ARRIVED:
-        return t('bookings.arrived') || 'Technician Arrived';
+        return t('bookings.arrived') || 'captain Arrived';
       case BookingStatus.IN_PROGRESS:
         return t('bookings.in_progress') || 'Service In Progress';
       case BookingStatus.COMPLETED:
@@ -222,13 +258,16 @@ export default function BookingDetailScreen() {
     );
   }
 
-  // Check if cancellation is allowed
-  const isCancellable = [
-    BookingStatus.PENDING_ASSIGNMENT,
-    BookingStatus.WORKER_ASSIGNED,
+  // Check if cancellation is allowed (active until captain approves / accepts)
+  const isCaptainApproved = [
     BookingStatus.WORKER_ACCEPTED,
-    BookingStatus.MANUAL_ASSIGNMENT_REQUIRED,
-  ].includes(booking.status);
+    BookingStatus.ON_THE_WAY,
+    BookingStatus.ARRIVED,
+    BookingStatus.IN_PROGRESS,
+    BookingStatus.COMPLETED,
+    BookingStatus.CANCELLED
+  ].includes(booking.status as any);
+  const canCancel = !isCaptainApproved;
 
   // Extract worker details
   const workerFullName = booking.workers?.users?.full_name;
@@ -296,13 +335,12 @@ export default function BookingDetailScreen() {
                 return (
                   <View key={idx} className="items-center flex-1">
                     <View
-                      className={`w-8 h-8 rounded-full items-center justify-center border-2 ${
-                        isCurrent
+                      className={`w-8 h-8 rounded-full items-center justify-center border-2 ${isCurrent
                           ? 'bg-[#3C01A7] border-[#3C01A7] shadow-sm'
                           : isPassed
-                          ? 'bg-emerald-500 border-emerald-500'
-                          : 'bg-slate-100 border-slate-200'
-                      }`}
+                            ? 'bg-emerald-500 border-emerald-500'
+                            : 'bg-slate-100 border-slate-200'
+                        }`}
                     >
                       <Ionicons
                         name={isPassed ? 'checkmark' : (step.icon as any)}
@@ -311,13 +349,12 @@ export default function BookingDetailScreen() {
                       />
                     </View>
                     <Text
-                      className={`text-[9px] font-bold mt-1 text-center ${
-                        isCurrent
+                      className={`text-[9px] font-bold mt-1 text-center ${isCurrent
                           ? 'text-[#3C01A7] font-extrabold'
                           : isPassed
-                          ? 'text-emerald-600'
-                          : 'text-slate-400'
-                      }`}
+                            ? 'text-emerald-600'
+                            : 'text-slate-400'
+                        }`}
                       numberOfLines={1}
                     >
                       {step.title}
@@ -327,6 +364,34 @@ export default function BookingDetailScreen() {
               })}
             </View>
           </View>
+
+          {/* SCHEDULED APPOINTMENT BANNER */}
+          {booking.scheduled_at && new Date(booking.scheduled_at) > new Date() && (
+            <View className="bg-purple-50 border border-purple-200/90 rounded-2xl p-4 mb-4 flex-row items-center gap-3 shadow-xs">
+              <View className="w-10 h-10 rounded-xl bg-purple-100 items-center justify-center">
+                <Ionicons name="calendar" size={20} color="#7C3AED" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-purple-950 font-extrabold text-sm">
+                  Scheduled Appointment 📅
+                </Text>
+                <Text className="text-purple-800 text-xs font-bold mt-0.5">
+                  {new Date(booking.scheduled_at).toLocaleDateString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+                <Text className="text-purple-600 text-[10px] font-medium mt-0.5">
+                  {booking.status === BookingStatus.WORKER_ACCEPTED
+                    ? 'Captain is confirmed and reserved for this time slot.'
+                    : 'Certified captains in your locality are receiving this request.'}
+                </Text>
+              </View>
+            </View>
+          )}
 
           {/* DYNAMIC RADAR SEARCHING CARD (When PENDING_ASSIGNMENT) */}
           {booking.status === BookingStatus.PENDING_ASSIGNMENT && (
@@ -343,7 +408,7 @@ export default function BookingDetailScreen() {
                 {t('bookings.findingPartner') || 'Matching Verified Professional...'}
               </Text>
               <Text className="text-slate-500 text-xs text-center leading-4.5 max-w-[280px] mb-3">
-                {t('bookings.findingPartnerMsg') || 'Notifying top-rated technicians in your locality. Average match time is under 45 seconds.'}
+                {t('bookings.findingPartnerMsg') || 'Notifying top-rated captains in your locality. Average match time is under 45 seconds.'}
               </Text>
 
               <View className="flex-row items-center gap-2 bg-purple-50 px-3 py-1.5 rounded-full border border-purple-200">
@@ -352,10 +417,35 @@ export default function BookingDetailScreen() {
                   Radar active • Locating experts nearby
                 </Text>
               </View>
+
+              {/* 2-Minute Cancellation Countdown Window */}
+              {secondsRemaining !== null && (
+                <View className="w-full mt-4 p-3 bg-amber-50 rounded-2xl border border-amber-200/80 flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-2 flex-1 mr-2">
+                    <Ionicons name="time-outline" size={16} color="#B45309" />
+                    <View className="flex-1">
+                      <Text className="text-amber-900 font-extrabold text-[11px]">
+                        2-Minute Cancellation Window
+                      </Text>
+                      <Text className="text-amber-700 text-[10px]">
+                        {secondsRemaining > 0
+                          ? '1-tap cancel available before captain accepts'
+                          : 'Cancellation window (2m) expired'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View className="bg-white border border-amber-200 px-2.5 py-1 rounded-xl items-center">
+                    <Text className="text-[8px] font-bold text-amber-700 uppercase font-mono">Cancel In</Text>
+                    <Text className="text-amber-950 text-xs font-black font-mono">
+                      {formatCountdown(secondsRemaining)}
+                    </Text>
+                  </View>
+                </View>
+              )}
             </View>
           )}
 
-          {/* STATUS HERO BANNER (When technician is en route / arrived) */}
+          {/* STATUS HERO BANNER (When captain is en route / arrived) */}
           {booking.status === BookingStatus.ARRIVED && (
             <View className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 mb-4 flex-row items-center gap-3">
               <View className="w-10 h-10 rounded-xl bg-amber-500/20 items-center justify-center">
@@ -363,7 +453,7 @@ export default function BookingDetailScreen() {
               </View>
               <View className="flex-1">
                 <Text className="text-amber-900 font-extrabold text-sm">
-                  Technician Has Arrived! 📍
+                  captain Has Arrived! 📍
                 </Text>
                 <Text className="text-amber-700 text-xs mt-0.5">
                   Please share the 4-digit PIN below to start your service.
@@ -379,7 +469,7 @@ export default function BookingDetailScreen() {
               </View>
               <View className="flex-1">
                 <Text className="text-blue-900 font-extrabold text-sm">
-                  Technician is En Route 🚗
+                  captain is En Route 🚗
                 </Text>
                 <Text className="text-blue-700 text-xs mt-0.5">
                   Track live location on the map below.
@@ -398,7 +488,7 @@ export default function BookingDetailScreen() {
                   Work in Progress ⚡
                 </Text>
                 <Text className="text-purple-700 text-xs mt-0.5">
-                  Your technician is completing your service.
+                  Your captain is completing your service.
                 </Text>
               </View>
             </View>
@@ -433,57 +523,57 @@ export default function BookingDetailScreen() {
             BookingStatus.ON_THE_WAY,
             BookingStatus.ARRIVED,
           ].includes(booking.status) && (
-            <View className="bg-white rounded-3xl p-5 border-2 border-purple-300 shadow-premium mb-4">
-              <View className="flex-row items-center justify-between mb-3">
-                <View className="flex-row items-center gap-2">
-                  <View className="w-8 h-8 rounded-xl bg-purple-100 items-center justify-center">
-                    <Ionicons name="shield-checkmark" size={18} color="#3C01A7" />
+              <View className="bg-white rounded-3xl p-5 border-2 border-purple-300 shadow-premium mb-4">
+                <View className="flex-row items-center justify-between mb-3">
+                  <View className="flex-row items-center gap-2">
+                    <View className="w-8 h-8 rounded-xl bg-purple-100 items-center justify-center">
+                      <Ionicons name="shield-checkmark" size={18} color="#3C01A7" />
+                    </View>
+                    <View>
+                      <Text className="text-slate-900 font-extrabold text-xs uppercase tracking-wider">
+                        {t('bookings.verificationCode') || 'Service Start OTP'}
+                      </Text>
+                      <Text className="text-slate-400 text-[10px]">
+                        Share with captain at doorstep
+                      </Text>
+                    </View>
                   </View>
-                  <View>
-                    <Text className="text-slate-900 font-extrabold text-xs uppercase tracking-wider">
-                      {t('bookings.verificationCode') || 'Service Start OTP'}
+
+                  {/* Copy OTP button */}
+                  <TouchableOpacity
+                    onPress={() => handleCopyOtp(booking.otp)}
+                    activeOpacity={0.7}
+                    className="flex-row items-center gap-1 bg-purple-50 px-2.5 py-1.5 rounded-xl border border-purple-200"
+                  >
+                    <Ionicons name={copiedOtp ? 'checkmark' : 'copy-outline'} size={12} color="#3C01A7" />
+                    <Text className="text-[#3C01A7] text-[10px] font-bold">
+                      {copiedOtp ? 'Copied!' : 'Copy'}
                     </Text>
-                    <Text className="text-slate-400 text-[10px]">
-                      Share with technician at doorstep
-                    </Text>
-                  </View>
+                  </TouchableOpacity>
                 </View>
 
-                {/* Copy OTP button */}
-                <TouchableOpacity
-                  onPress={() => handleCopyOtp(booking.otp)}
-                  activeOpacity={0.7}
-                  className="flex-row items-center gap-1 bg-purple-50 px-2.5 py-1.5 rounded-xl border border-purple-200"
-                >
-                  <Ionicons name={copiedOtp ? 'checkmark' : 'copy-outline'} size={12} color="#3C01A7" />
-                  <Text className="text-[#3C01A7] text-[10px] font-bold">
-                    {copiedOtp ? 'Copied!' : 'Copy'}
+                {/* 4 Digit Boxes */}
+                <View className="flex-row justify-center gap-3 my-2">
+                  {booking.otp.split('').map((char: string, idx: number) => (
+                    <View
+                      key={idx}
+                      className="w-13 h-15 rounded-2xl bg-purple-50/70 border border-purple-200 items-center justify-center shadow-sm"
+                    >
+                      <Text className="text-3xl font-extrabold text-[#3C01A7] font-mono">
+                        {char}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+
+                <View className="mt-3 bg-amber-50 rounded-xl p-2.5 border border-amber-200/70 flex-row items-center gap-2">
+                  <Ionicons name="lock-closed" size={14} color="#D97706" />
+                  <Text className="text-amber-800 text-[11px] font-medium flex-1">
+                    🔒 Do not share this OTP over phone. Share only when the professional arrives.
                   </Text>
-                </TouchableOpacity>
+                </View>
               </View>
-
-              {/* 4 Digit Boxes */}
-              <View className="flex-row justify-center gap-3 my-2">
-                {booking.otp.split('').map((char: string, idx: number) => (
-                  <View
-                    key={idx}
-                    className="w-13 h-15 rounded-2xl bg-purple-50/70 border border-purple-200 items-center justify-center shadow-sm"
-                  >
-                    <Text className="text-3xl font-extrabold text-[#3C01A7] font-mono">
-                      {char}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-
-              <View className="mt-3 bg-amber-50 rounded-xl p-2.5 border border-amber-200/70 flex-row items-center gap-2">
-                <Ionicons name="lock-closed" size={14} color="#D97706" />
-                <Text className="text-amber-800 text-[11px] font-medium flex-1">
-                  🔒 Do not share this OTP over phone. Share only when the professional arrives.
-                </Text>
-              </View>
-            </View>
-          )}
+            )}
 
           {/* ASSIGNED SERVICE PARTNER CARD */}
           {workerFullName && (
@@ -569,10 +659,27 @@ export default function BookingDetailScreen() {
               </Text>
             </View>
 
+            {booking.scheduled_at && (
+              <View className="flex-row items-center justify-between py-2 border-b border-slate-100 bg-purple-50/50 -mx-5 px-5">
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="calendar" size={15} color="#7C3AED" />
+                  <Text className="text-purple-900 text-xs font-bold">Scheduled Time</Text>
+                </View>
+                <Text className="text-purple-950 text-xs font-extrabold font-mono">
+                  {new Date(booking.scheduled_at).toLocaleString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+              </View>
+            )}
+
             <View className="flex-row items-center justify-between py-2 border-b border-slate-100">
               <View className="flex-row items-center gap-2">
-                <Ionicons name="calendar-outline" size={15} color="#64748B" />
-                <Text className="text-slate-600 text-xs font-medium">{t('bookings.scheduledTime') || 'Booking Time'}</Text>
+                <Ionicons name="time-outline" size={15} color="#64748B" />
+                <Text className="text-slate-600 text-xs font-medium">Booked On</Text>
               </View>
               <Text className="text-slate-800 text-xs font-medium">
                 {new Date(booking.created_at).toLocaleString('en-IN', {
@@ -630,7 +737,7 @@ export default function BookingDetailScreen() {
           </View>
 
           {/* Cancel Booking Action */}
-          {isCancellable && (
+          {canCancel ? (
             <TouchableOpacity
               onPress={handleCancel}
               disabled={cancelMutation.isPending}
@@ -641,11 +748,11 @@ export default function BookingDetailScreen() {
                 <ActivityIndicator color="#DC2626" />
               ) : (
                 <Text className="text-red-600 text-xs font-bold">
-                  {t('bookings.cancelRequest') || 'Cancel Booking'}
+                  {t('bookings.cancelRequest') || 'Cancel Booking'} {secondsRemaining !== null && secondsRemaining > 0 ? `(${formatCountdown(secondsRemaining)})` : ''}
                 </Text>
               )}
             </TouchableOpacity>
-          )}
+          ) : null}
         </View>
       </ScrollView>
     </SafeAreaView>

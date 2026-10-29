@@ -23,6 +23,9 @@ import { useCartStore } from '@/features/cart/cartStore';
 import { getPublicMediaUrl } from '@/utils/media';
 import { RazorpayModal, RazorpayPaymentData, RazorpaySuccessResponse } from '@/components/RazorpayModal';
 import { getFastCurrentLocation } from '@/utils/fastLocation';
+import MapPinModal from '@/components/maps/MapPinModal';
+import OutOfServiceModal from '@/components/guidance/OutOfServiceModal';
+import { WARANGAL_CENTER, isLocationInWarangal } from '@/utils/warangal-geofence';
 
 // Platform-resilient showAlert helper supporting callbacks
 const showAlert = (
@@ -160,10 +163,10 @@ async function openRazorpayCheckout(checkout: {
 export default function CreateBookingScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { categoryId, serviceId, checkout, from } = useLocalSearchParams<{ 
-    categoryId?: string; 
-    serviceId?: string; 
-    checkout?: string; 
+  const { categoryId, serviceId, checkout, from } = useLocalSearchParams<{
+    categoryId?: string;
+    serviceId?: string;
+    checkout?: string;
     from?: string;
   }>();
   const { t } = useLanguage();
@@ -210,6 +213,10 @@ export default function CreateBookingScreen() {
   const [razorpayModalVisible, setRazorpayModalVisible] = useState(false);
   const [activeRazorpayData, setActiveRazorpayData] = useState<RazorpayPaymentData | null>(null);
   const [pendingBookingId, setPendingBookingId] = useState<string | null>(null);
+
+  // Map Pinning & Warangal Geofence guidance state
+  const [mapPinModalVisible, setMapPinModalVisible] = useState(false);
+  const [outOfServiceVisible, setOutOfServiceVisible] = useState(false);
 
   const handleBack = () => {
     if (razorpayModalVisible) {
@@ -301,7 +308,7 @@ export default function CreateBookingScreen() {
     gcTime: 10 * 60 * 1000,
   });
 
-  const heroBanner = bannersData?.banners?.find((b: any) => 
+  const heroBanner = bannersData?.banners?.find((b: any) =>
     b?.placement === 'CATALOG_HERO' || b?.placement === 'ALL_HERO' || b?.placement === 'CUSTOMER_HERO' || b?.placement === 'HERO' || b?.placement === 'ALL'
   ) || bannersData?.banners?.[0];
 
@@ -324,7 +331,7 @@ export default function CreateBookingScreen() {
   // Categories & Items
   const categories = data?.categories ?? [];
   const allItems: any[] = categories.flatMap((c: any) => c.items ?? []);
-  
+
   // Normalize categoryId parameter (handles UUID, slug, name, or banner action_urls)
   const rawParam = typeof categoryId === 'string' ? categoryId.trim() : '';
   const cleanParam = rawParam
@@ -366,9 +373,9 @@ export default function CreateBookingScreen() {
     : (categories.find((c: any) => c.id === selectedCategoryFilter) || (categories.length > 0 ? categories[0] : null));
 
   // Count active applied modifiers (excluding category)
-  const activeFiltersCount = 
-    (sortBy !== 'popular' ? 1 : 0) + 
-    (priceFilter !== 'all' ? 1 : 0) + 
+  const activeFiltersCount =
+    (sortBy !== 'popular' ? 1 : 0) +
+    (priceFilter !== 'all' ? 1 : 0) +
     (durationFilter !== 'all' ? 1 : 0);
 
   const resetAllFilters = () => {
@@ -479,7 +486,7 @@ export default function CreateBookingScreen() {
       getLocation(false);
     }
     if (Platform.OS === 'web') {
-      loadRazorpayScript().catch(() => {});
+      loadRazorpayScript().catch(() => { });
     }
   }, []);
 
@@ -517,8 +524,8 @@ export default function CreateBookingScreen() {
   const selectedItemData = services.find((s: any) => s.id === effectiveServiceId) ||
     allItems.find((s: any) => s.id === effectiveServiceId);
 
-  const rawItemTotal = cartItems.length > 0 
-    ? getTotalPrice() 
+  const rawItemTotal = cartItems.length > 0
+    ? getTotalPrice()
     : Number(selectedItemData?.base_price ?? 0);
 
   // Authoritative backend pricing breakdown
@@ -584,7 +591,7 @@ export default function CreateBookingScreen() {
 
       if (verifyRes && verifyRes.success) {
         clearCart();
-        showAlert('Payment Successful!', 'Your booking has been placed and payment confirmed. Matching nearest technician!', [
+        showAlert('Payment Successful!', 'Your booking has been placed and payment confirmed. Matching nearest captain!', [
           {
             text: 'Track Booking',
             onPress: () => {
@@ -623,7 +630,7 @@ export default function CreateBookingScreen() {
     if (bookingId) {
       showAlert(
         'Payment Incomplete',
-        'Payment was not completed. Technician dispatch will occur after payment confirmation.',
+        'Payment was not completed. captain dispatch will occur after payment confirmation.',
         [
           {
             text: 'View Booking',
@@ -686,7 +693,7 @@ export default function CreateBookingScreen() {
       }
       if (res.success) {
         clearCart();
-        showAlert('Booking Placed', 'Your service booking has been created successfully. Matching the nearest technician!', [
+        showAlert('Booking Placed', 'Your service booking has been created successfully. Matching the nearest captain!', [
           {
             text: 'Track Booking',
             onPress: () => {
@@ -728,20 +735,26 @@ export default function CreateBookingScreen() {
     if (bookingTime === 'later') {
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() + selectedDateOffset);
-      const slotHour = selectedTimeSlot.includes('09:00 AM') ? 9 
-        : selectedTimeSlot.includes('11:00 AM') ? 11 
-        : selectedTimeSlot.includes('02:00 PM') ? 14 
-        : selectedTimeSlot.includes('04:00 PM') ? 16 
-        : 18;
+      const slotHour = selectedTimeSlot.includes('09:00 AM') ? 9
+        : selectedTimeSlot.includes('11:00 AM') ? 11
+          : selectedTimeSlot.includes('02:00 PM') ? 14
+            : selectedTimeSlot.includes('04:00 PM') ? 16
+              : 18;
       targetDate.setHours(slotHour, 0, 0, 0);
       scheduledAtVal = targetDate.toISOString();
+    }
+
+    // Warangal operational zone geofence check (30km radius)
+    if (coords && !isLocationInWarangal(coords.lat, coords.lng)) {
+      setOutOfServiceVisible(true);
+      return;
     }
 
     const payload = {
       service_item_id: effectiveServiceId,
       address: address.trim(),
-      latitude: coords?.lat ?? 17.3850,
-      longitude: coords?.lng ?? 78.4867,
+      latitude: coords?.lat ?? WARANGAL_CENTER.lat,
+      longitude: coords?.lng ?? WARANGAL_CENTER.lng,
       payment_mode: paymentMode,
       notes: notes.trim() || undefined,
       scheduled_at: scheduledAtVal,
@@ -786,11 +799,11 @@ export default function CreateBookingScreen() {
           <View className="relative h-60 bg-[#18073E]">
             {(() => {
               const categoryHeroImg = (activeCategory as any)?.icon_url || (activeCategory as any)?.image_url;
-              const heroImageUrl = categoryHeroImg 
-                ? getPublicMediaUrl(categoryHeroImg, 'service-images') 
-                : (heroBanner?.image_url 
-                    ? (getPublicMediaUrl(heroBanner.image_url, 'services') || heroBanner.image_url) 
-                    : 'https://ruavhqfttentcjtmnlct.supabase.co/storage/v1/object/public/services/banners/1791618779063_mobile_banner.webp');
+              const heroImageUrl = categoryHeroImg
+                ? getPublicMediaUrl(categoryHeroImg, 'service-images')
+                : (heroBanner?.image_url
+                  ? (getPublicMediaUrl(heroBanner.image_url, 'services') || heroBanner.image_url)
+                  : 'https://ruavhqfttentcjtmnlct.supabase.co/storage/v1/object/public/services/banners/1791618779063_mobile_banner.webp');
 
               return (
                 <>
@@ -802,7 +815,7 @@ export default function CreateBookingScreen() {
                     />
                   ) : (
                     <View className="w-full h-full bg-[#18073E] items-center justify-center">
-                      <Ionicons name="sparkles" size={48} color="#A78BFA" />
+                      <Ionicons name="construct" size={48} color="#A78BFA" />
                     </View>
                   )}
                   <LinearGradient
@@ -900,9 +913,9 @@ export default function CreateBookingScreen() {
                 {services.length} {services.length === 1 ? 'service' : 'services'} available
               </Text>
             </View>
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false} 
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
               className="px-5 flex-row"
               contentContainerStyle={{ paddingRight: 24 }}
             >
@@ -910,21 +923,19 @@ export default function CreateBookingScreen() {
               <TouchableOpacity
                 onPress={() => setSelectedCategoryFilter('all')}
                 activeOpacity={0.8}
-                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${
-                  selectedCategoryFilter === 'all'
+                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${selectedCategoryFilter === 'all'
                     ? 'bg-[#3C01A7] border-[#3C01A7]'
                     : 'bg-[#F8F7FC] border-border-secondary'
-                }`}
+                  }`}
               >
-                <Ionicons 
-                  name="grid" 
-                  size={11} 
-                  color={selectedCategoryFilter === 'all' ? '#FFFFFF' : '#3C01A7'} 
-                  style={{ marginRight: 4 }} 
+                <Ionicons
+                  name="grid"
+                  size={11}
+                  color={selectedCategoryFilter === 'all' ? '#FFFFFF' : '#3C01A7'}
+                  style={{ marginRight: 4 }}
                 />
-                <Text className={`text-xs font-black capitalize ${
-                  selectedCategoryFilter === 'all' ? 'text-white' : 'text-text-primary'
-                }`}>
+                <Text className={`text-xs font-black capitalize ${selectedCategoryFilter === 'all' ? 'text-white' : 'text-text-primary'
+                  }`}>
                   All ({allItems.length})
                 </Text>
               </TouchableOpacity>
@@ -938,15 +949,13 @@ export default function CreateBookingScreen() {
                     key={cat.id}
                     onPress={() => setSelectedCategoryFilter(cat.id)}
                     activeOpacity={0.8}
-                    className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${
-                      isSelected
+                    className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${isSelected
                         ? 'bg-[#3C01A7] border-[#3C01A7]'
                         : 'bg-[#F8F7FC] border-border-secondary'
-                    }`}
+                      }`}
                   >
-                    <Text className={`text-xs font-black capitalize ${
-                      isSelected ? 'text-white' : 'text-text-primary'
-                    }`}>
+                    <Text className={`text-xs font-black capitalize ${isSelected ? 'text-white' : 'text-text-primary'
+                      }`}>
                       {cat.name} ({count})
                     </Text>
                   </TouchableOpacity>
@@ -967,21 +976,19 @@ export default function CreateBookingScreen() {
               <TouchableOpacity
                 onPress={() => setIsFilterModalOpen(true)}
                 activeOpacity={0.8}
-                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${
-                  activeFiltersCount > 0
+                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${activeFiltersCount > 0
                     ? 'bg-[#3C01A7] border-[#3C01A7]'
                     : 'bg-[#F8F7FC] border-border-secondary'
-                }`}
+                  }`}
               >
-                <Ionicons 
-                  name="options-outline" 
-                  size={13} 
-                  color={activeFiltersCount > 0 ? '#FFFFFF' : '#3C01A7'} 
-                  style={{ marginRight: 4 }} 
+                <Ionicons
+                  name="options-outline"
+                  size={13}
+                  color={activeFiltersCount > 0 ? '#FFFFFF' : '#3C01A7'}
+                  style={{ marginRight: 4 }}
                 />
-                <Text className={`text-[11px] font-black ${
-                  activeFiltersCount > 0 ? 'text-white' : 'text-text-primary'
-                }`}>
+                <Text className={`text-[11px] font-black ${activeFiltersCount > 0 ? 'text-white' : 'text-text-primary'
+                  }`}>
                   Filters {activeFiltersCount > 0 ? `(${activeFiltersCount})` : ''}
                 </Text>
               </TouchableOpacity>
@@ -993,34 +1000,32 @@ export default function CreateBookingScreen() {
                   setIsFilterModalOpen(true);
                 }}
                 activeOpacity={0.8}
-                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${
-                  sortBy !== 'popular'
+                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${sortBy !== 'popular'
                     ? 'bg-[#3C01A7] border-[#3C01A7]'
                     : 'bg-[#F8F7FC] border-border-secondary'
-                }`}
+                  }`}
               >
-                <Ionicons 
-                  name="swap-vertical" 
-                  size={12} 
-                  color={sortBy !== 'popular' ? '#FFFFFF' : '#64748B'} 
-                  style={{ marginRight: 4 }} 
+                <Ionicons
+                  name="swap-vertical"
+                  size={12}
+                  color={sortBy !== 'popular' ? '#FFFFFF' : '#64748B'}
+                  style={{ marginRight: 4 }}
                 />
-                <Text className={`text-[11px] font-black ${
-                  sortBy !== 'popular' ? 'text-white' : 'text-text-primary'
-                }`}>
-                  {sortBy === 'price_low' 
-                    ? 'Price: Low' 
-                    : sortBy === 'price_high' 
-                    ? 'Price: High' 
-                    : sortBy === 'duration' 
-                    ? 'Fastest' 
-                    : 'Sort'}
+                <Text className={`text-[11px] font-black ${sortBy !== 'popular' ? 'text-white' : 'text-text-primary'
+                  }`}>
+                  {sortBy === 'price_low'
+                    ? 'Price: Low'
+                    : sortBy === 'price_high'
+                      ? 'Price: High'
+                      : sortBy === 'duration'
+                        ? 'Fastest'
+                        : 'Sort'}
                 </Text>
-                <Ionicons 
-                  name="chevron-down" 
-                  size={11} 
-                  color={sortBy !== 'popular' ? '#FFFFFF' : '#94A3B8'} 
-                  style={{ marginLeft: 3 }} 
+                <Ionicons
+                  name="chevron-down"
+                  size={11}
+                  color={sortBy !== 'popular' ? '#FFFFFF' : '#94A3B8'}
+                  style={{ marginLeft: 3 }}
                 />
               </TouchableOpacity>
 
@@ -1028,15 +1033,13 @@ export default function CreateBookingScreen() {
               <TouchableOpacity
                 onPress={() => setPriceFilter(priceFilter === 'under_100' ? 'all' : 'under_100')}
                 activeOpacity={0.8}
-                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${
-                  priceFilter === 'under_100'
+                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${priceFilter === 'under_100'
                     ? 'bg-[#3C01A7] border-[#3C01A7]'
                     : 'bg-[#F8F7FC] border-border-secondary'
-                }`}
+                  }`}
               >
-                <Text className={`text-[11px] font-black ${
-                  priceFilter === 'under_100' ? 'text-white' : 'text-text-primary'
-                }`}>
+                <Text className={`text-[11px] font-black ${priceFilter === 'under_100' ? 'text-white' : 'text-text-primary'
+                  }`}>
                   Under ₹100
                 </Text>
               </TouchableOpacity>
@@ -1045,15 +1048,13 @@ export default function CreateBookingScreen() {
               <TouchableOpacity
                 onPress={() => setPriceFilter(priceFilter === '100_to_500' ? 'all' : '100_to_500')}
                 activeOpacity={0.8}
-                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${
-                  priceFilter === '100_to_500'
+                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${priceFilter === '100_to_500'
                     ? 'bg-[#3C01A7] border-[#3C01A7]'
                     : 'bg-[#F8F7FC] border-border-secondary'
-                }`}
+                  }`}
               >
-                <Text className={`text-[11px] font-black ${
-                  priceFilter === '100_to_500' ? 'text-white' : 'text-text-primary'
-                }`}>
+                <Text className={`text-[11px] font-black ${priceFilter === '100_to_500' ? 'text-white' : 'text-text-primary'
+                  }`}>
                   ₹100 - ₹500
                 </Text>
               </TouchableOpacity>
@@ -1062,21 +1063,19 @@ export default function CreateBookingScreen() {
               <TouchableOpacity
                 onPress={() => setDurationFilter(durationFilter === 'quick' ? 'all' : 'quick')}
                 activeOpacity={0.8}
-                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${
-                  durationFilter === 'quick'
+                className={`mr-2 px-3 py-1.5 rounded-xl border flex-row items-center shadow-xs ${durationFilter === 'quick'
                     ? 'bg-[#3C01A7] border-[#3C01A7]'
                     : 'bg-[#F8F7FC] border-border-secondary'
-                }`}
+                  }`}
               >
-                <Ionicons 
-                  name="flash" 
-                  size={11} 
-                  color={durationFilter === 'quick' ? '#FFFFFF' : '#FF9F2E'} 
-                  style={{ marginRight: 3 }} 
+                <Ionicons
+                  name="flash"
+                  size={11}
+                  color={durationFilter === 'quick' ? '#FFFFFF' : '#FF9F2E'}
+                  style={{ marginRight: 3 }}
                 />
-                <Text className={`text-[11px] font-black ${
-                  durationFilter === 'quick' ? 'text-white' : 'text-text-primary'
-                }`}>
+                <Text className={`text-[11px] font-black ${durationFilter === 'quick' ? 'text-white' : 'text-text-primary'
+                  }`}>
                   Express (≤45m)
                 </Text>
               </TouchableOpacity>
@@ -1226,8 +1225,8 @@ export default function CreateBookingScreen() {
                         >
                           {itemCatName ? (
                             <View className="mb-1 self-start">
-                              <Text 
-                                className="text-[9px] font-black uppercase tracking-wider text-[#3C01A7] bg-[#F0EBFB] px-1.5 py-0.5 rounded-md" 
+                              <Text
+                                className="text-[9px] font-black uppercase tracking-wider text-[#3C01A7] bg-[#F0EBFB] px-1.5 py-0.5 rounded-md"
                                 numberOfLines={1}
                               >
                                 {itemCatName}
@@ -1310,11 +1309,11 @@ export default function CreateBookingScreen() {
 
         {/* Floating bottom checkout bar (Modernized, Safe-Area aware, No text truncation) */}
         {getTotalCount() > 0 ? (
-          <View 
+          <View
             className="absolute bottom-0 left-0 right-0 bg-white border-t border-border-primary px-4 pt-3 flex-row justify-between items-center shadow-premium"
             style={{ paddingBottom: Math.max(insets.bottom, 12) }}
           >
-            <TouchableOpacity 
+            <TouchableOpacity
               activeOpacity={0.85}
               onPress={() => router.push({ pathname: '/(customer)/cart', params: { from: 'catalog' } } as any)}
               className="flex-1 mr-3"
@@ -1364,12 +1363,12 @@ export default function CreateBookingScreen() {
           onRequestClose={() => setIsFilterModalOpen(false)}
         >
           <View className="flex-1 bg-black/60 justify-end">
-            <TouchableOpacity 
-              className="flex-1" 
-              activeOpacity={1} 
-              onPress={() => setIsFilterModalOpen(false)} 
+            <TouchableOpacity
+              className="flex-1"
+              activeOpacity={1}
+              onPress={() => setIsFilterModalOpen(false)}
             />
-            <View 
+            <View
               className="bg-white rounded-t-3xl overflow-hidden max-h-[82%]"
               style={{ paddingBottom: Math.max(insets.bottom, 16) }}
             >
@@ -1401,11 +1400,10 @@ export default function CreateBookingScreen() {
                 <View className="w-[36%] bg-[#F8F7FC] border-r border-border-primary py-2">
                   <TouchableOpacity
                     onPress={() => setActiveFilterTab('sort')}
-                    className={`px-4 py-3.5 flex-row items-center justify-between border-l-4 ${
-                      activeFilterTab === 'sort'
+                    className={`px-4 py-3.5 flex-row items-center justify-between border-l-4 ${activeFilterTab === 'sort'
                         ? 'bg-white border-[#3C01A7]'
                         : 'border-transparent'
-                    }`}
+                      }`}
                   >
                     <Text className={`text-xs ${activeFilterTab === 'sort' ? 'font-black text-[#3C01A7]' : 'font-bold text-text-secondary'}`}>
                       Sort By
@@ -1417,11 +1415,10 @@ export default function CreateBookingScreen() {
 
                   <TouchableOpacity
                     onPress={() => setActiveFilterTab('price')}
-                    className={`px-4 py-3.5 flex-row items-center justify-between border-l-4 ${
-                      activeFilterTab === 'price'
+                    className={`px-4 py-3.5 flex-row items-center justify-between border-l-4 ${activeFilterTab === 'price'
                         ? 'bg-white border-[#3C01A7]'
                         : 'border-transparent'
-                    }`}
+                      }`}
                   >
                     <Text className={`text-xs ${activeFilterTab === 'price' ? 'font-black text-[#3C01A7]' : 'font-bold text-text-secondary'}`}>
                       Price
@@ -1433,11 +1430,10 @@ export default function CreateBookingScreen() {
 
                   <TouchableOpacity
                     onPress={() => setActiveFilterTab('duration')}
-                    className={`px-4 py-3.5 flex-row items-center justify-between border-l-4 ${
-                      activeFilterTab === 'duration'
+                    className={`px-4 py-3.5 flex-row items-center justify-between border-l-4 ${activeFilterTab === 'duration'
                         ? 'bg-white border-[#3C01A7]'
                         : 'border-transparent'
-                    }`}
+                      }`}
                   >
                     <Text className={`text-xs ${activeFilterTab === 'duration' ? 'font-black text-[#3C01A7]' : 'font-bold text-text-secondary'}`}>
                       Duration
@@ -1470,9 +1466,8 @@ export default function CreateBookingScreen() {
                             </Text>
                             <Text className="text-[10px] text-text-muted mt-0.5">{opt.desc}</Text>
                           </View>
-                          <View className={`w-5 h-5 rounded-full border items-center justify-center ${
-                            sortBy === opt.value ? 'border-[#3C01A7] bg-[#3C01A7]' : 'border-slate-300'
-                          }`}>
+                          <View className={`w-5 h-5 rounded-full border items-center justify-center ${sortBy === opt.value ? 'border-[#3C01A7] bg-[#3C01A7]' : 'border-slate-300'
+                            }`}>
                             {sortBy === opt.value && <View className="w-2 h-2 rounded-full bg-white" />}
                           </View>
                         </TouchableOpacity>
@@ -1500,9 +1495,8 @@ export default function CreateBookingScreen() {
                             </Text>
                             <Text className="text-[10px] text-text-muted mt-0.5">{opt.desc}</Text>
                           </View>
-                          <View className={`w-5 h-5 rounded-full border items-center justify-center ${
-                            priceFilter === opt.value ? 'border-[#3C01A7] bg-[#3C01A7]' : 'border-slate-300'
-                          }`}>
+                          <View className={`w-5 h-5 rounded-full border items-center justify-center ${priceFilter === opt.value ? 'border-[#3C01A7] bg-[#3C01A7]' : 'border-slate-300'
+                            }`}>
                             {priceFilter === opt.value && <View className="w-2 h-2 rounded-full bg-white" />}
                           </View>
                         </TouchableOpacity>
@@ -1529,9 +1523,8 @@ export default function CreateBookingScreen() {
                             </Text>
                             <Text className="text-[10px] text-text-muted mt-0.5">{opt.desc}</Text>
                           </View>
-                          <View className={`w-5 h-5 rounded-full border items-center justify-center ${
-                            durationFilter === opt.value ? 'border-[#3C01A7] bg-[#3C01A7]' : 'border-slate-300'
-                          }`}>
+                          <View className={`w-5 h-5 rounded-full border items-center justify-center ${durationFilter === opt.value ? 'border-[#3C01A7] bg-[#3C01A7]' : 'border-slate-300'
+                            }`}>
                             {durationFilter === opt.value && <View className="w-2 h-2 rounded-full bg-white" />}
                           </View>
                         </TouchableOpacity>
@@ -1591,8 +1584,8 @@ export default function CreateBookingScreen() {
         </View>
       </View>
 
-      <ScrollView 
-        className="flex-1 px-5 pt-4" 
+      <ScrollView
+        className="flex-1 px-5 pt-4"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 110 }}
       >
@@ -1642,24 +1635,22 @@ export default function CreateBookingScreen() {
             <Text className="text-text-primary text-xs font-black uppercase tracking-wider mb-3">
               1. Select Schedule Type
             </Text>
-            
+
             <TouchableOpacity
               onPress={() => setBookingTime('immediate')}
               activeOpacity={0.85}
-              className={`border rounded-2xl p-3.5 mb-2.5 flex-row justify-between items-center ${
-                bookingTime === 'immediate' ? 'border-[#3C01A7] bg-[#F0EBFB]' : 'border-border-secondary'
-              }`}
+              className={`border rounded-2xl p-3.5 mb-2.5 flex-row justify-between items-center ${bookingTime === 'immediate' ? 'border-[#3C01A7] bg-[#F0EBFB]' : 'border-border-secondary'
+                }`}
             >
               <View className="flex-row items-center flex-1 mr-3">
                 <Ionicons name="flash-outline" size={18} color="#3C01A7" style={{ marginRight: 10 }} />
                 <View className="flex-1">
                   <Text className="text-text-primary text-xs font-black">Instant Booking (30-45 mins)</Text>
-                  <Text className="text-text-secondary text-[9px] font-semibold mt-0.5">Dispatches nearest certified technician immediately</Text>
+                  <Text className="text-text-secondary text-[9px] font-semibold mt-0.5">Dispatches nearest certified captain immediately</Text>
                 </View>
               </View>
-              <View className={`w-4 h-4 rounded-full border items-center justify-center ${
-                bookingTime === 'immediate' ? 'border-[#3C01A7]' : 'border-border-secondary'
-              }`}>
+              <View className={`w-4 h-4 rounded-full border items-center justify-center ${bookingTime === 'immediate' ? 'border-[#3C01A7]' : 'border-border-secondary'
+                }`}>
                 {bookingTime === 'immediate' && <View className="w-2.5 h-2.5 rounded-full bg-[#3C01A7]" />}
               </View>
             </TouchableOpacity>
@@ -1667,9 +1658,8 @@ export default function CreateBookingScreen() {
             <TouchableOpacity
               onPress={() => setBookingTime('later')}
               activeOpacity={0.85}
-              className={`border rounded-2xl p-3.5 flex-row justify-between items-center ${
-                bookingTime === 'later' ? 'border-[#3C01A7] bg-[#F0EBFB]' : 'border-border-secondary'
-              }`}
+              className={`border rounded-2xl p-3.5 flex-row justify-between items-center ${bookingTime === 'later' ? 'border-[#3C01A7] bg-[#F0EBFB]' : 'border-border-secondary'
+                }`}
             >
               <View className="flex-row items-center flex-1 mr-3">
                 <Ionicons name="calendar-outline" size={18} color="#FF9F2E" style={{ marginRight: 10 }} />
@@ -1678,9 +1668,8 @@ export default function CreateBookingScreen() {
                   <Text className="text-text-secondary text-[9px] font-semibold mt-0.5">Select upcoming date & time slot</Text>
                 </View>
               </View>
-              <View className={`w-4 h-4 rounded-full border items-center justify-center ${
-                bookingTime === 'later' ? 'border-[#3C01A7]' : 'border-border-secondary'
-              }`}>
+              <View className={`w-4 h-4 rounded-full border items-center justify-center ${bookingTime === 'later' ? 'border-[#3C01A7]' : 'border-border-secondary'
+                }`}>
                 {bookingTime === 'later' && <View className="w-2.5 h-2.5 rounded-full bg-[#3C01A7]" />}
               </View>
             </TouchableOpacity>
@@ -1704,11 +1693,10 @@ export default function CreateBookingScreen() {
                         key={offset}
                         onPress={() => setSelectedDateOffset(offset)}
                         activeOpacity={0.8}
-                        className={`mr-2.5 px-3.5 py-2 rounded-2xl border items-center min-w-[76px] ${
-                          isSelected 
-                            ? 'bg-[#3C01A7] border-[#3C01A7] shadow-xs' 
+                        className={`mr-2.5 px-3.5 py-2 rounded-2xl border items-center min-w-[76px] ${isSelected
+                            ? 'bg-[#3C01A7] border-[#3C01A7] shadow-xs'
                             : 'bg-background-secondary border-border-secondary'
-                        }`}
+                          }`}
                       >
                         <Text className={`text-[10px] font-black uppercase ${isSelected ? 'text-white' : 'text-text-muted'}`}>
                           {dayLabel}
@@ -1739,11 +1727,10 @@ export default function CreateBookingScreen() {
                         key={slot}
                         onPress={() => setSelectedTimeSlot(slot)}
                         activeOpacity={0.8}
-                        className={`px-3 py-2 rounded-xl border ${
-                          isSelected 
-                            ? 'bg-[#F0EBFB] border-[#3C01A7]' 
+                        className={`px-3 py-2 rounded-xl border ${isSelected
+                            ? 'bg-[#F0EBFB] border-[#3C01A7]'
                             : 'bg-background-secondary border-border-secondary'
-                        }`}
+                          }`}
                       >
                         <Text className={`text-[10px] font-black ${isSelected ? 'text-[#3C01A7]' : 'text-text-secondary'}`}>
                           {slot}
@@ -1827,11 +1814,11 @@ export default function CreateBookingScreen() {
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} className="py-1">
                   {savedAddresses.map((addr: any) => {
                     const isSelected = selectedAddressId === addr.id || address.trim() === addr.address?.trim();
-                    const iconName = addr.label?.toLowerCase() === 'home' 
-                      ? 'home' 
-                      : addr.label?.toLowerCase() === 'work' 
-                      ? 'business' 
-                      : 'location';
+                    const iconName = addr.label?.toLowerCase() === 'home'
+                      ? 'home'
+                      : addr.label?.toLowerCase() === 'work'
+                        ? 'business'
+                        : 'location';
 
                     return (
                       <TouchableOpacity
@@ -1844,16 +1831,15 @@ export default function CreateBookingScreen() {
                           }
                         }}
                         activeOpacity={0.85}
-                        className={`mr-2.5 px-3.5 py-2 rounded-xl border flex-row items-center shadow-xs active:scale-95 ${
-                          isSelected 
-                            ? 'bg-[#3C01A7] border-[#3C01A7]' 
+                        className={`mr-2.5 px-3.5 py-2 rounded-xl border flex-row items-center shadow-xs active:scale-95 ${isSelected
+                            ? 'bg-[#3C01A7] border-[#3C01A7]'
                             : 'bg-white border-border-secondary'
-                        }`}
+                          }`}
                       >
-                        <Ionicons 
-                          name={isSelected ? 'checkmark-circle' : iconName as any} 
-                          size={13} 
-                          color={isSelected ? '#FFFFFF' : '#3C01A7'} 
+                        <Ionicons
+                          name={isSelected ? 'checkmark-circle' : iconName as any}
+                          size={13}
+                          color={isSelected ? '#FFFFFF' : '#3C01A7'}
                           style={{ marginRight: 5 }}
                         />
                         <Text className={`text-xs font-black uppercase ${isSelected ? 'text-white' : 'text-text-primary'}`}>
@@ -1866,25 +1852,64 @@ export default function CreateBookingScreen() {
               </View>
             )}
 
-            {/* Live GPS Re-detect button */}
-            <TouchableOpacity
-              onPress={() => getLocation(true)}
-              disabled={locating}
-              activeOpacity={0.8}
-              className="mt-3.5 py-2.5 rounded-xl bg-[#F0EBFB] border border-[#3C01A7]/30 flex-row items-center justify-center active:bg-[#3C01A7]/20"
-            >
-              {locating ? (
-                <>
-                  <ActivityIndicator size="small" color="#3C01A7" style={{ marginRight: 6 }} />
-                  <Text className="text-[#3C01A7] text-xs font-black">Acquiring GPS...</Text>
-                </>
-              ) : (
-                <>
-                  <Ionicons name="locate" size={15} color="#3C01A7" style={{ marginRight: 6 }} />
-                  <Text className="text-[#3C01A7] text-xs font-black">Use Current GPS Location</Text>
-                </>
-              )}
-            </TouchableOpacity>
+            {/* Warangal Geofence Status Badge */}
+            {coords && (
+              <View className="mt-3">
+                {isLocationInWarangal(coords.lat, coords.lng) ? (
+                  <View className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex-row items-center gap-2">
+                    <Ionicons name="checkmark-circle" size={14} color="#059669" />
+                    <Text className="text-emerald-800 text-[11px] font-bold flex-1">
+                      Warangal Serviceable Area (15-min dispatch available)
+                    </Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => setOutOfServiceVisible(true)}
+                    activeOpacity={0.8}
+                    className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex-row items-center justify-between gap-2"
+                  >
+                    <View className="flex-row items-center gap-1.5 flex-1">
+                      <Ionicons name="alert-circle" size={14} color="#D97706" />
+                      <Text className="text-amber-900 text-[11px] font-bold flex-1">
+                        Outside Warangal (Operational within 30km radius)
+                      </Text>
+                    </View>
+                    <Text className="text-[#3C01A7] text-[10px] font-black underline">Learn More</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* Dual Location Action Buttons: Pin on Map & GPS */}
+            <View className="mt-3.5 flex-row gap-2.5">
+              <TouchableOpacity
+                onPress={() => setMapPinModalVisible(true)}
+                activeOpacity={0.8}
+                className="flex-1 py-2.5 rounded-xl bg-[#45016E] flex-row items-center justify-center active:bg-[#340053] shadow-xs"
+              >
+                <Ionicons name="map" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text className="text-white text-xs font-black">Pin on Map</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => getLocation(true)}
+                disabled={locating}
+                activeOpacity={0.8}
+                className="flex-1 py-2.5 rounded-xl bg-[#F0EBFB] border border-[#3C01A7]/30 flex-row items-center justify-center active:bg-[#3C01A7]/20"
+              >
+                {locating ? (
+                  <>
+                    <ActivityIndicator size="small" color="#3C01A7" style={{ marginRight: 6 }} />
+                    <Text className="text-[#3C01A7] text-xs font-black">Locating...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="locate" size={15} color="#3C01A7" style={{ marginRight: 6 }} />
+                    <Text className="text-[#3C01A7] text-xs font-black">Use GPS</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           </Card>
         </View>
 
@@ -1963,9 +1988,8 @@ export default function CreateBookingScreen() {
                 <TouchableOpacity
                   onPress={() => setPaymentMode('COD')}
                   activeOpacity={0.85}
-                  className={`flex-1 py-3 px-2 rounded-2xl border items-center flex-row justify-center space-x-1.5 ${
-                    paymentMode === 'COD' ? 'border-[#3C01A7] bg-[#F0EBFB]' : 'border-border-secondary bg-white'
-                  }`}
+                  className={`flex-1 py-3 px-2 rounded-2xl border items-center flex-row justify-center space-x-1.5 ${paymentMode === 'COD' ? 'border-[#3C01A7] bg-[#F0EBFB]' : 'border-border-secondary bg-white'
+                    }`}
                 >
                   <Ionicons name="cash-outline" size={16} color={paymentMode === 'COD' ? '#3C01A7' : '#8E84B0'} />
                   <Text className={`text-[10px] font-black ${paymentMode === 'COD' ? 'text-[#3C01A7]' : 'text-text-secondary'}`}>
@@ -1978,9 +2002,8 @@ export default function CreateBookingScreen() {
                 <TouchableOpacity
                   onPress={() => setPaymentMode('ONLINE')}
                   activeOpacity={0.85}
-                  className={`flex-1 py-3 px-2 rounded-2xl border items-center flex-row justify-center space-x-1.5 ${
-                    paymentMode === 'ONLINE' ? 'border-[#3C01A7] bg-[#F0EBFB]' : 'border-border-secondary bg-white'
-                  }`}
+                  className={`flex-1 py-3 px-2 rounded-2xl border items-center flex-row justify-center space-x-1.5 ${paymentMode === 'ONLINE' ? 'border-[#3C01A7] bg-[#F0EBFB]' : 'border-border-secondary bg-white'
+                    }`}
                 >
                   <Ionicons name="card-outline" size={16} color={paymentMode === 'ONLINE' ? '#3C01A7' : '#8E84B0'} />
                   <Text className={`text-[10px] font-black ${paymentMode === 'ONLINE' ? 'text-[#3C01A7]' : 'text-text-secondary'}`}>
@@ -1993,9 +2016,8 @@ export default function CreateBookingScreen() {
                 <TouchableOpacity
                   onPress={() => setPaymentMode('WALLET')}
                   activeOpacity={0.85}
-                  className={`flex-1 py-3 px-2 rounded-2xl border items-center flex-row justify-center space-x-1.5 ${
-                    paymentMode === 'WALLET' ? 'border-[#3C01A7] bg-[#F0EBFB]' : 'border-border-secondary bg-white'
-                  }`}
+                  className={`flex-1 py-3 px-2 rounded-2xl border items-center flex-row justify-center space-x-1.5 ${paymentMode === 'WALLET' ? 'border-[#3C01A7] bg-[#F0EBFB]' : 'border-border-secondary bg-white'
+                    }`}
                 >
                   <Ionicons name="wallet-outline" size={16} color={paymentMode === 'WALLET' ? '#3C01A7' : '#8E84B0'} />
                   <Text className={`text-[10px] font-black ${paymentMode === 'WALLET' ? 'text-[#3C01A7]' : 'text-text-secondary'}`}>
@@ -2033,7 +2055,7 @@ export default function CreateBookingScreen() {
             <Text className="text-text-primary text-xs font-black uppercase tracking-wider mb-3">
               5. Bill & Payment Summary
             </Text>
-            
+
             <View className="flex-row justify-between mb-2">
               <Text className="text-text-secondary text-xs font-semibold">{t('bookings.itemTotal')}</Text>
               <Text className="text-text-primary text-xs font-black">₹{rawItemTotal}</Text>
@@ -2131,6 +2153,30 @@ export default function CreateBookingScreen() {
         onSuccess={handlePaymentSuccess}
         onDismiss={handlePaymentDismiss}
         onError={handlePaymentError}
+      />
+
+      {/* Map Pin Modal (Google Maps Pinning) */}
+      <MapPinModal
+        visible={mapPinModalVisible}
+        onClose={() => setMapPinModalVisible(false)}
+        initialLat={coords?.lat}
+        initialLng={coords?.lng}
+        onConfirm={(loc) => {
+          setAddress(loc.address);
+          setCoords({ lat: loc.lat, lng: loc.lng });
+          setSelectedAddressId(null);
+          if (!loc.isInWarangal) {
+            setOutOfServiceVisible(true);
+          }
+        }}
+      />
+
+      {/* Out of Service Guidance Modal */}
+      <OutOfServiceModal
+        visible={outOfServiceVisible}
+        onClose={() => setOutOfServiceVisible(false)}
+        detectedCity={address.split(',')[1]?.trim() || address.split(',')[0]?.trim()}
+        onSelectWarangal={() => setMapPinModalVisible(true)}
       />
     </SafeAreaView>
   );

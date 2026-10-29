@@ -58,12 +58,10 @@ export default {
     bookService: 'సేవ బుక్ చేయి',
     noServices: 'సేవలు అందుబాటులో లేవు',
     volobenefits: 'వోలో ప్రయోజనాలు',
-    voloPrime: 'వోలో ప్రైమ్',
     myWallet: 'నా వాలెట్',
     referEarn: 'రెఫర్ & సంపాదించు',
     addresses: 'చిరునామాలు',
-    voloPrimeAlert: 'VOLO ప్రైమ్ ప్రస్తుతం వెబ్ యాప్‌లో యాక్టివ్‌గా ఉంది! మొబైల్ సపోర్ట్ త్వరలో వస్తుంది.',
-    referEarnAlert: 'మీ స్నేహితులను ఆహ్వానించి ₹150 రివార్డ్ కాయిన్లు సంపాదించండి!',
+    referEarnAlert: 'మీ స్నేహితులను ఆహ్వానించి నగదు బహుమతులు సంపాదించండి!',
   },
 
   // Customer Booking Alerts

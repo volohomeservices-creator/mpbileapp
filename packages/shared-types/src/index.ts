@@ -306,6 +306,8 @@ export interface AuthUser {
   role: UserRole;
   full_name: string | null;
   phone: string;
+  email?: string | null;
+  avatar_url?: string | null;
 }
 
 export interface LoginResponse {
@@ -417,5 +419,68 @@ export const ProfileUpdateSchema = z.object({
   full_name: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email address').optional().or(z.literal('')),
 });
+
+// ─── Guidance & Onboarding Domain Types ──────────────────────
+
+export type GuidanceRole = 'customer' | 'worker';
+
+export interface ProfileCompletionItem {
+  id: string;
+  label: string;
+  completed: boolean;
+  isMandatory: boolean;
+  targetRoute?: string;
+  description?: string;
+}
+
+export interface ProfileCompletionResult {
+  percentage: number;
+  isComplete: boolean;
+  isApproved?: boolean; // Specific to workers/captains
+  operationalStatus?: string; // PENDING, APPROVED, REJECTED, SUSPENDED
+  completedItems: string[];
+  missingItems: string[];
+  items: ProfileCompletionItem[];
+  nextStep: string | null;
+  nextRoute: string | null;
+}
+
+export interface UserGuidanceProgress {
+  id?: string;
+  user_id: string;
+  role: GuidanceRole;
+  completed_guides: string[];
+  dismissed_guides: string[];
+  current_flow: string | null;
+  current_step: string | null;
+  flow_version: number;
+  updated_at?: string;
+}
+
+export interface GuideStep {
+  id: string;
+  title: string;
+  description: string;
+  targetId?: string;
+  position?: 'top' | 'bottom' | 'center';
+  actionText?: string;
+  actionRoute?: string;
+}
+
+export interface GuideDefinition {
+  id: string;
+  role: GuidanceRole;
+  title: string;
+  description: string;
+  category: string;
+  steps: GuideStep[];
+}
+
+export interface GuidanceApiResponse {
+  progress: UserGuidanceProgress;
+  completion: ProfileCompletionResult;
+  guides: GuideDefinition[];
+}
+
 
 

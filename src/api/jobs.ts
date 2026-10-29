@@ -1,9 +1,9 @@
 import { apiGet, apiPost, apiPatch } from '@/api/client';
 import { Booking, JobListResponse } from '@volo/shared-types';
 
-/** Get available / pending / history jobs for the worker. */
-export const getAvailableJobs = (tab?: 'available' | 'history'): Promise<JobListResponse> =>
-  apiGet('/api/worker/jobs', { params: { tab: tab === 'history' ? 'history' : 'new' } });
+/** Get available / pending / upcoming / history jobs for the worker. */
+export const getAvailableJobs = (tab?: 'available' | 'upcoming' | 'history'): Promise<JobListResponse> =>
+  apiGet('/api/worker/jobs', { params: { tab: tab === 'history' ? 'history' : tab === 'upcoming' ? 'upcoming' : 'new' } });
 
 /** Get the worker's current active job. */
 export const getCurrentJob = (): Promise<{ job: Booking | null }> =>
