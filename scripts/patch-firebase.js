@@ -353,4 +353,27 @@ export default class NativeFirebaseError extends Error {
   }
 }
 
+// ─── 4. Patch expo-clipboard expo-module.config.json publication.version ───
+const clipboardConfigPath = path.resolve(
+  __dirname,
+  '../node_modules/expo-clipboard/expo-module.config.json'
+);
+if (fs.existsSync(clipboardConfigPath)) {
+  try {
+    const raw = fs.readFileSync(clipboardConfigPath, 'utf8');
+    const cfg = JSON.parse(raw);
+    if (cfg.android && cfg.android.publication && !cfg.android.publication.version) {
+      cfg.android.publication.version = '58.0.4';
+      fs.writeFileSync(clipboardConfigPath, JSON.stringify(cfg, null, 2), 'utf8');
+      console.log('[patch-firebase] Successfully added publication.version to expo-clipboard.');
+      patchCount++;
+    } else {
+      console.log('[patch-firebase] expo-clipboard already has publication.version.');
+      skipCount++;
+    }
+  } catch (err) {
+    console.warn('[patch-firebase] Warning: could not patch expo-clipboard:', err.message);
+  }
+}
+
 console.log(`[patch-firebase] Done. Patched: ${patchCount}, Already up-to-date: ${skipCount}`);
