@@ -363,12 +363,12 @@ if (fs.existsSync(clipboardConfigPath)) {
     const raw = fs.readFileSync(clipboardConfigPath, 'utf8');
     const cfg = JSON.parse(raw);
     if (cfg.android && cfg.android.publication && !cfg.android.publication.version) {
-      cfg.android.publication.version = '58.0.4';
+      cfg.android.publication.version = '57.0.2';
       fs.writeFileSync(clipboardConfigPath, JSON.stringify(cfg, null, 2), 'utf8');
       console.log('[patch-firebase] Successfully added publication.version to expo-clipboard.');
       patchCount++;
     } else {
-      console.log('[patch-firebase] expo-clipboard already has publication.version.');
+      console.log('[patch-firebase] expo-clipboard publication.version verified.');
       skipCount++;
     }
   } catch (err) {
