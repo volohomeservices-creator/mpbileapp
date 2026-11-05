@@ -3,17 +3,22 @@ import { Platform } from 'react-native';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { MOBILE_CONFIG } from '@/lib/mobile-config';
 
+export type KycDocType =
+  | 'AADHAAR_FRONT'
+  | 'AADHAAR_BACK'
+  | 'PAN_CARD'
+  | 'SELFIE_VERIFICATION'
+  | 'PROFILE_PHOTO'
+  | 'EXPERIENCE_CERTIFICATE'
+  | 'EXPERIENCE_CERTIFICATE_1'
+  | 'EXPERIENCE_CERTIFICATE_2'
+  | 'EXPERIENCE_CERTIFICATE_3'
+  | 'CERTIFICATE';
+
 export interface KycDocument {
   id: string;
   worker_id: string;
-  document_type:
-    | 'AADHAAR_FRONT'
-    | 'AADHAAR_BACK'
-    | 'PAN_CARD'
-    | 'SELFIE_VERIFICATION'
-    | 'PROFILE_PHOTO'
-    | 'EXPERIENCE_CERTIFICATE'
-    | 'CERTIFICATE';
+  document_type: KycDocType;
   file_url: string;
   file_size: number;
   mime_type: string;
@@ -80,16 +85,17 @@ async function compressImageForKyc(uri: string, isSelfie = false, isDocument = f
     const actions: ImageManipulator.Action[] = [
       {
         resize: {
-          width: isSelfie ? 800 : isDocument ? 1000 : (MOBILE_CONFIG.UPLOAD_MAX_WIDTH || 1200),
+          width: isSelfie ? 720 : 900,
         },
       },
     ];
 
+    // High quality WebP compression to ~60-100KB for lightning fast uploads
     const result = await ImageManipulator.manipulateAsync(
       uri,
       actions,
       {
-        compress: isDocument ? 0.6 : isSelfie ? 0.75 : 0.8,
+        compress: 0.6,
         format: ImageManipulator.SaveFormat.WEBP,
       }
     );
@@ -99,8 +105,8 @@ async function compressImageForKyc(uri: string, isSelfie = false, isDocument = f
     try {
       const fallback = await ImageManipulator.manipulateAsync(
         uri,
-        [{ resize: { width: isSelfie ? 800 : isDocument ? 1000 : 1200 } }],
-        { compress: isDocument ? 0.55 : 0.8, format: ImageManipulator.SaveFormat.JPEG }
+        [{ resize: { width: isSelfie ? 720 : 900 } }],
+        { compress: 0.55, format: ImageManipulator.SaveFormat.JPEG }
       );
       return fallback.uri;
     } catch {
@@ -115,19 +121,12 @@ async function compressImageForKyc(uri: string, isSelfie = false, isDocument = f
  */
 export async function uploadKycDocument(
   workerId: string,
-  documentType:
-    | 'AADHAAR_FRONT'
-    | 'AADHAAR_BACK'
-    | 'PAN_CARD'
-    | 'SELFIE_VERIFICATION'
-    | 'PROFILE_PHOTO'
-    | 'EXPERIENCE_CERTIFICATE'
-    | 'CERTIFICATE',
+  documentType: KycDocType,
   fileUri: string
 ): Promise<{ success: boolean; message?: string; overallStatus?: string }> {
   // 1. Compress image and convert to WebP
   const isSelfie = documentType === 'SELFIE_VERIFICATION';
-  const isDoc = ['AADHAAR_FRONT', 'AADHAAR_BACK', 'PAN_CARD', 'EXPERIENCE_CERTIFICATE', 'CERTIFICATE'].includes(documentType);
+  const isDoc = true;
   const compressedUri = await compressImageForKyc(fileUri, isSelfie, isDoc);
 
   // 2. Determine target path and bucket
@@ -139,6 +138,9 @@ export async function uploadKycDocument(
     PAN_CARD: 'pan.webp',
     SELFIE_VERIFICATION: 'selfie.webp',
     EXPERIENCE_CERTIFICATE: 'certificate.webp',
+    EXPERIENCE_CERTIFICATE_1: 'certificate_1.webp',
+    EXPERIENCE_CERTIFICATE_2: 'certificate_2.webp',
+    EXPERIENCE_CERTIFICATE_3: 'certificate_3.webp',
     CERTIFICATE: 'certificate.webp',
   };
   const filename = fileMap[documentType] || 'certificate.webp';

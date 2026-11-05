@@ -31,9 +31,12 @@ type DocType =
   | 'SELFIE_VERIFICATION'
   | 'PROFILE_PHOTO'
   | 'EXPERIENCE_CERTIFICATE'
+  | 'EXPERIENCE_CERTIFICATE_1'
+  | 'EXPERIENCE_CERTIFICATE_2'
+  | 'EXPERIENCE_CERTIFICATE_3'
   | 'CERTIFICATE';
 
-const DOC_CONFIGS: Array<{
+const IDENTITY_DOC_CONFIGS: Array<{
   type: DocType;
   title: string;
   description: string;
@@ -65,11 +68,35 @@ const DOC_CONFIGS: Array<{
     icon: 'camera-outline',
     isCameraPreferred: true,
   },
+];
+
+const CERTIFICATE_CONFIGS: Array<{
+  type: DocType;
+  title: string;
+  description: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  isMandatory: boolean;
+}> = [
   {
-    type: 'EXPERIENCE_CERTIFICATE',
-    title: 'Experience / Certificate',
-    description: 'Mandatory: Trade diploma, ITI license, or work experience certificate (< 100KB).',
+    type: 'EXPERIENCE_CERTIFICATE_1',
+    title: 'Certificate 1 (Primary)',
+    description: 'Trade diploma, ITI license, or primary work experience certificate.',
     icon: 'ribbon-outline',
+    isMandatory: true,
+  },
+  {
+    type: 'EXPERIENCE_CERTIFICATE_2',
+    title: 'Certificate 2 (Additional)',
+    description: 'Optional: Secondary skill certification, previous employment letter.',
+    icon: 'ribbon-outline',
+    isMandatory: false,
+  },
+  {
+    type: 'EXPERIENCE_CERTIFICATE_3',
+    title: 'Certificate 3 (Specialization)',
+    description: 'Optional: Specialized trade license, safety training, or course completion.',
+    icon: 'ribbon-outline',
+    isMandatory: false,
   },
 ];
 
@@ -160,6 +187,13 @@ export default function WorkerKycScreen() {
   }, []);
 
   const getDocStatus = (type: DocType): KycDocument | undefined => {
+    if (type === 'EXPERIENCE_CERTIFICATE_1') {
+      return (
+        documents.find((d) => d.document_type === 'EXPERIENCE_CERTIFICATE_1') ||
+        documents.find((d) => d.document_type === 'EXPERIENCE_CERTIFICATE') ||
+        documents.find((d) => d.document_type === 'CERTIFICATE')
+      );
+    }
     return documents.find((d) => d.document_type === type);
   };
 
@@ -291,39 +325,24 @@ export default function WorkerKycScreen() {
       return;
     }
 
-    // Check document counts - all 5 documents are mandatory
-    const uploadedTypes = documents.map((d) => d.document_type);
-    const requiredDocs: DocType[] = [
-      'AADHAAR_FRONT',
-      'AADHAAR_BACK',
-      'PAN_CARD',
-      'SELFIE_VERIFICATION',
-      'EXPERIENCE_CERTIFICATE',
-    ];
-    const missingDocs = requiredDocs.filter((req) => {
-      if (req === 'EXPERIENCE_CERTIFICATE') {
-        return (
-          !uploadedTypes.includes('EXPERIENCE_CERTIFICATE') &&
-          !uploadedTypes.includes('CERTIFICATE')
-        );
-      }
-      return !uploadedTypes.includes(req);
-    });
+    // Check mandatory documents (Aadhaar Front, Aadhaar Back, PAN Card, Selfie, Certificate 1)
+    const hasAadhaarFront = !!getDocStatus('AADHAAR_FRONT');
+    const hasAadhaarBack = !!getDocStatus('AADHAAR_BACK');
+    const hasPan = !!getDocStatus('PAN_CARD');
+    const hasSelfie = !!getDocStatus('SELFIE_VERIFICATION');
+    const hasCert1 = !!getDocStatus('EXPERIENCE_CERTIFICATE_1');
 
-    if (missingDocs.length > 0) {
-      const docLabels: Record<string, string> = {
-        AADHAAR_FRONT: 'Aadhaar Card (Front)',
-        AADHAAR_BACK: 'Aadhaar Card (Back)',
-        PAN_CARD: 'PAN Card',
-        SELFIE_VERIFICATION: 'Live Selfie / Portrait',
-        EXPERIENCE_CERTIFICATE: 'Experience / Certificate Document',
-      };
-      const names = missingDocs
-        .map((m) => docLabels[m] || m.replace(/_/g, ' '))
-        .join('\n• ');
+    const missingList: string[] = [];
+    if (!hasAadhaarFront) missingList.push('Aadhaar Card (Front)');
+    if (!hasAadhaarBack) missingList.push('Aadhaar Card (Back)');
+    if (!hasPan) missingList.push('PAN Card');
+    if (!hasSelfie) missingList.push('Live Selfie / Portrait');
+    if (!hasCert1) missingList.push('Experience Certificate 1 (Mandatory)');
+
+    if (missingList.length > 0) {
       Alert.alert(
         'Mandatory Documents Required',
-        `Please upload all required identity and certificate documents before submitting:\n\n• ${names}`
+        `Please upload all required identity and certificate documents before submitting:\n\n• ${missingList.join('\n• ')}`
       );
       return;
     }
@@ -364,20 +383,21 @@ export default function WorkerKycScreen() {
 
   const isApproved = kycState?.overall_status === 'APPROVED';
   const isRejected = kycState?.overall_status === 'REJECTED';
-  const isPendingReview =
-    kycState?.overall_status === 'PENDING' &&
-    documents.filter((d) => d.document_type !== 'PROFILE_PHOTO').length >= 5;
+  const hasAadhaarFront = !!getDocStatus('AADHAAR_FRONT');
+  const hasAadhaarBack = !!getDocStatus('AADHAAR_BACK');
+  const hasPan = !!getDocStatus('PAN_CARD');
+  const hasSelfie = !!getDocStatus('SELFIE_VERIFICATION');
+  const hasCert1 = !!getDocStatus('EXPERIENCE_CERTIFICATE_1');
 
-  const uploadedDocCount = documents.filter((d) =>
-    [
-      'AADHAAR_FRONT',
-      'AADHAAR_BACK',
-      'PAN_CARD',
-      'SELFIE_VERIFICATION',
-      'EXPERIENCE_CERTIFICATE',
-      'CERTIFICATE'
-    ].includes(d.document_type)
-  ).length;
+  const mandatoryUploadedCount =
+    (hasAadhaarFront ? 1 : 0) +
+    (hasAadhaarBack ? 1 : 0) +
+    (hasPan ? 1 : 0) +
+    (hasSelfie ? 1 : 0) +
+    (hasCert1 ? 1 : 0);
+
+  const isPendingReview =
+    kycState?.overall_status === 'PENDING' && mandatoryUploadedCount >= 5;
 
   if (loading) {
     return (
@@ -540,29 +560,29 @@ export default function WorkerKycScreen() {
                 <View className="mt-2.5 bg-purple-200/60 rounded-full h-2 w-full overflow-hidden">
                   <View
                     className="bg-purple-600 h-full rounded-full"
-                    style={{ width: `${Math.min(100, (uploadedDocCount / DOC_CONFIGS.length) * 100)}%` }}
+                    style={{ width: `${Math.min(100, (mandatoryUploadedCount / 5) * 100)}%` }}
                   />
                 </View>
                 <Text className="text-purple-900 text-[10px] font-bold mt-1 text-right">
-                  {uploadedDocCount}/{DOC_CONFIGS.length} Documents Uploaded
+                  {mandatoryUploadedCount}/5 Required Documents Uploaded
                 </Text>
               </View>
             </View>
           )}
 
-          {/* ================= SECTION 1: DOCUMENTS ================= */}
+          {/* ================= SECTION 1: IDENTITY DOCUMENTS ================= */}
           <View className="mb-6">
             <View className="flex-row items-center justify-between mb-3">
               <Text className="text-slate-800 text-sm font-black uppercase tracking-wider">
-                1. Required Documents
+                1. Identity Verification Documents
               </Text>
               <Text className="text-slate-500 text-xs font-bold">
-                {uploadedDocCount} of {DOC_CONFIGS.length} ready
+                Aadhaar, PAN & Selfie
               </Text>
             </View>
 
             <View className="gap-3">
-              {DOC_CONFIGS.map((docConfig) => {
+              {IDENTITY_DOC_CONFIGS.map((docConfig) => {
                 const doc = getDocStatus(docConfig.type);
                 const isUploading = uploadingType === docConfig.type;
                 const isDocApproved = doc?.status === 'APPROVED';
@@ -726,10 +746,183 @@ export default function WorkerKycScreen() {
             </View>
           </View>
 
-          {/* ================= SECTION 2: PERSONAL DETAILS ================= */}
+          {/* ================= SECTION 2: EXPERIENCE CERTIFICATES (3 SLOTS) ================= */}
+          <View className="mb-6">
+            <View className="flex-row items-center justify-between mb-3">
+              <View>
+                <Text className="text-slate-800 text-sm font-black uppercase tracking-wider">
+                  2. Experience & Certificates
+                </Text>
+                <Text className="text-slate-500 text-[11px] mt-0.5">
+                  Upload up to 3 trade certificate photos (under 100KB fast upload)
+                </Text>
+              </View>
+              <View className="bg-purple-100 px-2 py-0.5 rounded-md">
+                <Text className="text-purple-900 text-[10px] font-extrabold uppercase">
+                  3 Images
+                </Text>
+              </View>
+            </View>
+
+            <View className="gap-3">
+              {CERTIFICATE_CONFIGS.map((certConfig) => {
+                const doc = getDocStatus(certConfig.type);
+                const isUploading = uploadingType === certConfig.type;
+                const isDocApproved = doc?.status === 'APPROVED';
+
+                return (
+                  <View
+                    key={certConfig.type}
+                    className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs"
+                  >
+                    <View className="flex-row items-start justify-between">
+                      <View className="flex-row items-start gap-3 flex-1 pr-2">
+                        <View className="w-10 h-10 rounded-xl bg-purple-50 items-center justify-center border border-purple-200 shrink-0">
+                          <Ionicons name={certConfig.icon} size={20} color="#7C3AED" />
+                        </View>
+                        <View className="flex-1">
+                          <View className="flex-row items-center gap-1.5 flex-wrap">
+                            <Text className="text-slate-900 font-extrabold text-sm">
+                              {certConfig.title}
+                            </Text>
+                            <View
+                              className={`px-1.5 py-0.5 rounded border ${
+                                certConfig.isMandatory
+                                  ? 'bg-rose-50 border-rose-200'
+                                  : 'bg-slate-100 border-slate-200'
+                              }`}
+                            >
+                              <Text
+                                className={`text-[9px] font-black uppercase ${
+                                  certConfig.isMandatory ? 'text-rose-600' : 'text-slate-600'
+                                }`}
+                              >
+                                {certConfig.isMandatory ? 'Mandatory *' : 'Optional'}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text className="text-slate-500 text-xs mt-0.5 leading-snug">
+                            {certConfig.description}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Status indicator */}
+                      <View
+                        className={`px-2.5 py-1 rounded-full flex-row items-center gap-1 ${
+                          doc?.status === 'APPROVED'
+                            ? 'bg-emerald-50 border border-emerald-200'
+                            : doc?.status === 'REJECTED'
+                            ? 'bg-rose-50 border border-rose-200'
+                            : doc
+                            ? 'bg-amber-50 border border-amber-200'
+                            : 'bg-slate-100 border border-slate-200'
+                        }`}
+                      >
+                        <Ionicons
+                          name={
+                            doc?.status === 'APPROVED'
+                              ? 'checkmark-circle'
+                              : doc?.status === 'REJECTED'
+                              ? 'close-circle'
+                              : doc
+                              ? 'time'
+                              : 'cloud-upload-outline'
+                          }
+                          size={12}
+                          color={
+                            doc?.status === 'APPROVED'
+                              ? '#059669'
+                              : doc?.status === 'REJECTED'
+                              ? '#E11D48'
+                              : doc
+                              ? '#D97706'
+                              : '#64748B'
+                          }
+                        />
+                        <Text
+                          className={`text-[9px] font-black uppercase tracking-wider ${
+                            doc?.status === 'APPROVED'
+                              ? 'text-emerald-700'
+                              : doc?.status === 'REJECTED'
+                              ? 'text-rose-700'
+                              : doc
+                              ? 'text-amber-700'
+                              : 'text-slate-600'
+                          }`}
+                        >
+                          {doc?.status || 'NOT UPLOADED'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Thumbnail preview if available */}
+                    {doc?.signedUrl && (
+                      <View className="mt-3 pt-3 border-t border-slate-100 flex-row items-center gap-3">
+                        <Image
+                          source={{ uri: doc.signedUrl }}
+                          className="w-16 h-12 rounded-lg bg-slate-100 border border-slate-200"
+                          resizeMode="cover"
+                        />
+                        <View className="flex-1">
+                          <Text className="text-slate-800 text-xs font-bold">
+                            Certificate Uploaded
+                          </Text>
+                          <Text className="text-slate-400 text-[10px]">
+                            {doc.uploaded_at
+                              ? new Date(doc.uploaded_at).toLocaleDateString()
+                              : 'Uploaded'}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Fast Upload Buttons */}
+                    {!isDocApproved && (
+                      <View className="mt-3.5 pt-3 border-t border-slate-100">
+                        <View className="flex-row items-center gap-2">
+                          <TouchableOpacity
+                            onPress={() => handleCaptureImage(certConfig.type)}
+                            disabled={isUploading}
+                            activeOpacity={0.8}
+                            className="flex-1 bg-[#3C01A7] py-2.5 rounded-xl flex-row items-center justify-center gap-1.5 shadow-2xs"
+                          >
+                            {isUploading ? (
+                              <ActivityIndicator size="small" color="#FFFFFF" />
+                            ) : (
+                              <>
+                                <Ionicons name="camera" size={15} color="#FFFFFF" />
+                                <Text className="text-white text-xs font-black uppercase tracking-wider">
+                                  Camera
+                                </Text>
+                              </>
+                            )}
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            onPress={() => handlePickFromGallery(certConfig.type)}
+                            disabled={isUploading}
+                            activeOpacity={0.8}
+                            className="flex-1 bg-slate-100 border border-slate-200 py-2.5 rounded-xl flex-row items-center justify-center gap-1.5"
+                          >
+                            <Ionicons name="images" size={15} color="#334155" />
+                            <Text className="text-slate-700 text-xs font-bold uppercase tracking-wider">
+                              Gallery
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* ================= SECTION 3: PERSONAL DETAILS ================= */}
           <View className="bg-white rounded-2xl border border-slate-200 p-4 mb-6 shadow-2xs">
             <Text className="text-slate-800 text-sm font-black uppercase tracking-wider mb-4">
-              2. Personal Details
+              3. Personal Details
             </Text>
 
             <View className="gap-3.5">
@@ -762,10 +955,10 @@ export default function WorkerKycScreen() {
             </View>
           </View>
 
-          {/* ================= SECTION 3: BANK DETAILS ================= */}
+          {/* ================= SECTION 4: BANK DETAILS ================= */}
           <View className="bg-white rounded-2xl border border-slate-200 p-4 mb-6 shadow-2xs">
             <Text className="text-slate-800 text-sm font-black uppercase tracking-wider mb-1">
-              3. Bank Account for Settlements
+              4. Bank Account for Settlements
             </Text>
             <Text className="text-slate-400 text-xs mb-4">
               Direct bank transfers are credited every Monday for completed jobs.
@@ -831,11 +1024,11 @@ export default function WorkerKycScreen() {
             </View>
           </View>
 
-          {/* ================= SECTION 4: SERVICE TRADES ================= */}
+          {/* ================= SECTION 5: SERVICE TRADES ================= */}
           <View className="bg-white rounded-2xl border border-slate-200 p-4 mb-6 shadow-2xs">
             <View className="flex-row items-center justify-between mb-1">
               <Text className="text-slate-800 text-sm font-black uppercase tracking-wider">
-                4. Service Trade & Skills
+                5. Service Trade & Skills
               </Text>
               <View className="bg-[#3C01A7]/10 px-2.5 py-0.5 rounded-full border border-[#3C01A7]/20">
                 <Text className="text-[10px] font-black text-[#3C01A7] uppercase tracking-wider">

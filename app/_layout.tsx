@@ -184,6 +184,7 @@ function AppShell() {
 }
 
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { InAppNotificationBanner } from '@/features/notifications/InAppNotificationBanner';
 
 export default function RootLayout() {
   return (
@@ -193,6 +194,7 @@ export default function RootLayout() {
           <QueryClientProvider client={queryClient}>
             <StatusBar style="dark" />
             <AppShell />
+            <InAppNotificationBanner />
           </QueryClientProvider>
         </LanguageProvider>
       </SafeAreaProvider>

@@ -1,35 +1,51 @@
-import { Alert, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import messaging from '@react-native-firebase/messaging';
 import { router } from 'expo-router';
+import { queryClient } from '@/lib/queryClient';
+import { displayInAppNotification } from './InAppNotificationBanner';
 
 /**
  * Handles incoming push notifications for foreground, background, and quit states.
  */
 export function registerNotificationHandlers() {
   if (Platform.OS === 'web') return () => {};
+
   // 1. Foreground listener
   const unsubscribeForeground = messaging().onMessage(async (remoteMessage) => {
     if (__DEV__) console.log('[FCM] Foreground notification received:', remoteMessage);
 
-    const title = remoteMessage.notification?.title || 'Notification';
-    const body = remoteMessage.notification?.body || '';
+    const rawTitle = remoteMessage.notification?.title || remoteMessage.data?.title || 'Notification';
+    const rawBody = remoteMessage.notification?.body || remoteMessage.data?.body || '';
+    const rawType = remoteMessage.data?.type || remoteMessage.data?.notification_type || '';
 
-    // Show a native in-app alert since user is currently using the app
-    Alert.alert(
+    const title = typeof rawTitle === 'string' ? rawTitle : String(rawTitle || 'Notification');
+    const body = typeof rawBody === 'string' ? rawBody : String(rawBody || '');
+    const notifType = typeof rawType === 'string' ? rawType : String(rawType || '');
+
+    // Immediately invalidate queries so UI state stays 100% in sync
+    try {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      if (notifType.includes('KYC') || title.toLowerCase().includes('kyc') || body.toLowerCase().includes('kyc')) {
+        queryClient.invalidateQueries({ queryKey: ['worker-dashboard'] });
+        queryClient.invalidateQueries({ queryKey: ['worker-kyc'] });
+      }
+      if (remoteMessage.data?.bookingId) {
+        queryClient.invalidateQueries({ queryKey: ['worker-active-job'] });
+        queryClient.invalidateQueries({ queryKey: ['worker-available-jobs'] });
+        queryClient.invalidateQueries({ queryKey: ['customer-bookings'] });
+      }
+    } catch (e) {
+      // Invalidation safe catch
+    }
+
+    // Display professional floating mobile notification banner
+    displayInAppNotification({
       title,
       body,
-      [
-        {
-          text: 'Close',
-          style: 'cancel',
-        },
-        {
-          text: 'View details',
-          onPress: () => handleNotificationAction(remoteMessage.data),
-        },
-      ],
-      { cancelable: true }
-    );
+      type: notifType,
+      data: remoteMessage.data,
+      onPress: () => handleNotificationAction(remoteMessage.data),
+    });
   });
 
   // 2. Background click listener
@@ -60,7 +76,13 @@ export function registerNotificationHandlers() {
 function handleNotificationAction(data: any) {
   if (!data) return;
 
-  const { bookingId, role } = data;
+  const { bookingId, role, type } = data;
+  const notifType = (type || '').toUpperCase();
+
+  if (notifType.includes('KYC')) {
+    router.push('/(worker)/kyc');
+    return;
+  }
 
   if (bookingId) {
     if (role === 'worker') {

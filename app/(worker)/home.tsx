@@ -165,6 +165,11 @@ export default function WorkerHomeScreen() {
     queryKey: ['worker-dashboard', user?.id],
     queryFn: getWorkerDashboard,
     enabled: !!user?.id,
+    refetchInterval: (query) => {
+      // Auto-poll every 10s if KYC is pending so approval syncs immediately without app reload
+      const kyc = query.state.data?.kycStatus;
+      return kyc !== 'APPROVED' ? 10000 : false;
+    },
   });
 
   const {
@@ -428,14 +433,26 @@ export default function WorkerHomeScreen() {
     },
   });
 
-  const toggleOnline = () => {
+  const toggleOnline = async () => {
     if (toggleStatusMutation.isPending) return;
+
     if (!isOnline && dashboardData?.kycStatus !== 'APPROVED') {
+      // Check fresh status directly from server first to avoid any cached stale state!
+      try {
+        const fresh = await refetchDash();
+        if (fresh.data?.kycStatus === 'APPROVED') {
+          toggleStatusMutation.mutate(true);
+          return;
+        }
+      } catch (err) {
+        // Fallback to cached alert
+      }
+
       Alert.alert(
         'KYC Approval Required',
         'You must complete your KYC verification (Aadhaar, PAN & Bank details) and be approved before you can go online to receive jobs.',
         [
-          { text: 'Complete KYC', onPress: () => router.push('/(worker)/kyc' as any) },
+          { text: 'Check KYC Status', onPress: () => router.push('/(worker)/kyc' as any) },
           { text: 'Cancel', style: 'cancel' },
         ]
       );

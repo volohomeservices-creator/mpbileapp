@@ -61,9 +61,18 @@ export default function WorkerNotificationsScreen() {
     markAllReadMutation.mutate();
   };
 
-  const handleNotificationPress = (id: string, isRead: boolean) => {
-    if (!isRead) {
-      markReadMutation.mutate(id);
+  const handleNotificationPress = (item: any) => {
+    if (!item.is_read) {
+      markReadMutation.mutate(item.id);
+    }
+    const type = (item.type || '').toUpperCase();
+    if (type.includes('KYC') || item.title?.toLowerCase().includes('kyc') || item.body?.toLowerCase().includes('kyc')) {
+      router.push('/(worker)/kyc');
+      return;
+    }
+    const bookingId = item.data?.bookingId || item.data?.booking_id;
+    if (bookingId) {
+      router.push(`/(worker)/jobs/${bookingId}` as any);
     }
   };
 
@@ -118,7 +127,7 @@ export default function WorkerNotificationsScreen() {
           renderItem={({ item }) => (
             <NotificationItem
               notification={item}
-              onPress={() => handleNotificationPress(item.id, item.is_read)}
+              onPress={() => handleNotificationPress(item)}
             />
           )}
           ListEmptyComponent={

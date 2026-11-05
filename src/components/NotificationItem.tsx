@@ -1,7 +1,7 @@
-import { View, Text, TouchableOpacity } from 'react-native';
+import React from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Notification, NotificationType } from '@volo/shared-types';
-import { Card } from './ui/Card';
 
 interface NotificationItemProps {
   notification: Notification;
@@ -9,102 +9,286 @@ interface NotificationItemProps {
 }
 
 interface NotificationStyle {
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   iconColor: string;
   iconBg: string;
+  badgeBg: string;
   label: string;
 }
 
-function getNotificationStyle(type: NotificationType): NotificationStyle {
-  switch (type) {
-    case NotificationType.BOOKING_REQUEST:
-    case NotificationType.MANUAL_ASSIGNMENT_CREATED:
-      return { icon: 'briefcase', iconColor: 'rgb(var(--primary))', iconBg: 'rgba(var(--primary) / 0.1)', label: 'New Request' };
-    case NotificationType.BOOKING_ACCEPTED:
-    case NotificationType.MANUAL_ASSIGNMENT_ACCEPTED:
-      return { icon: 'checkmark-circle', iconColor: 'rgb(var(--success))', iconBg: 'rgba(var(--success) / 0.1)', label: 'Accepted' };
-    case NotificationType.BOOKING_REJECTED:
-    case NotificationType.MANUAL_ASSIGNMENT_REJECTED:
-    case NotificationType.MANUAL_ASSIGNMENT_EXPIRED:
-      return { icon: 'close-circle', iconColor: 'rgb(var(--danger))', iconBg: 'rgba(var(--danger) / 0.1)', label: 'Declined' };
-    case NotificationType.WORKER_ARRIVING:
-      return { icon: 'car', iconColor: 'rgb(var(--info))', iconBg: 'rgba(var(--info) / 0.1)', label: 'On The Way' };
-    case NotificationType.WORKER_ARRIVED:
-      return { icon: 'location', iconColor: 'rgb(var(--info))', iconBg: 'rgba(var(--info) / 0.1)', label: 'Arrived' };
-    case NotificationType.WORKER_NEARBY:
-      return { icon: 'navigate', iconColor: 'rgb(var(--info))', iconBg: 'rgba(var(--info) / 0.1)', label: 'Nearby' };
-    case NotificationType.JOB_STARTED:
-    case NotificationType.ROUTE_STARTED:
-      return { icon: 'play-circle', iconColor: 'rgb(var(--warning))', iconBg: 'rgba(var(--warning) / 0.1)', label: 'In Progress' };
-    case NotificationType.JOB_COMPLETED:
-      return { icon: 'ribbon', iconColor: 'rgb(var(--success))', iconBg: 'rgba(var(--success) / 0.1)', label: 'Completed' };
-    case NotificationType.PAYMENT_SUCCESS:
-      return { icon: 'card', iconColor: 'rgb(var(--success))', iconBg: 'rgba(var(--success) / 0.1)', label: 'Paid' };
-    case NotificationType.PAYOUT_PROCESSED:
-      return { icon: 'cash', iconColor: 'rgb(var(--success))', iconBg: 'rgba(var(--success) / 0.1)', label: 'Payout' };
-    case NotificationType.KYC_APPROVED:
-      return { icon: 'shield-checkmark', iconColor: 'rgb(var(--success))', iconBg: 'rgba(var(--success) / 0.1)', label: 'KYC Verified' };
-    case NotificationType.KYC_REJECTED:
-      return { icon: 'shield', iconColor: 'rgb(var(--danger))', iconBg: 'rgba(var(--danger) / 0.1)', label: 'KYC Rejected' };
-    case NotificationType.LOW_WALLET_BALANCE:
-      return { icon: 'warning', iconColor: 'rgb(var(--warning))', iconBg: 'rgba(var(--warning) / 0.1)', label: 'Low Balance' };
-    default:
-      return { icon: 'notifications', iconColor: 'rgb(var(--primary))', iconBg: 'rgba(var(--primary) / 0.1)', label: 'System Alert' };
+function getNotificationStyle(type: string): NotificationStyle {
+  const t = (type || '').toUpperCase();
+
+  if (t === 'KYC_APPROVED' || t.includes('KYC_APPROV')) {
+    return {
+      icon: 'shield-checkmark',
+      iconColor: '#059669',
+      iconBg: '#ECFDF5',
+      badgeBg: '#D1FAE5',
+      label: 'KYC Verified',
+    };
+  }
+  if (t === 'KYC_REJECTED' || t.includes('KYC_REJECT')) {
+    return {
+      icon: 'shield',
+      iconColor: '#E11D48',
+      iconBg: '#FFF1F2',
+      badgeBg: '#FFE4E6',
+      label: 'KYC Review Update',
+    };
+  }
+  if (t.includes('NEW_KYC_SUBMISSION')) {
+    return {
+      icon: 'document-text',
+      iconColor: '#7C3AED',
+      iconBg: '#F5F3FF',
+      badgeBg: '#EDE9FE',
+      label: 'KYC Submitted',
+    };
+  }
+  if (t === 'BOOKING_REQUEST' || t === 'MANUAL_ASSIGNMENT_CREATED') {
+    return {
+      icon: 'briefcase',
+      iconColor: '#3C01A7',
+      iconBg: '#F5F3FF',
+      badgeBg: '#EDE9FE',
+      label: 'New Request',
+    };
+  }
+  if (t === 'BOOKING_ACCEPTED' || t === 'MANUAL_ASSIGNMENT_ACCEPTED') {
+    return {
+      icon: 'checkmark-circle',
+      iconColor: '#059669',
+      iconBg: '#ECFDF5',
+      badgeBg: '#D1FAE5',
+      label: 'Accepted',
+    };
+  }
+  if (t === 'BOOKING_REJECTED' || t === 'MANUAL_ASSIGNMENT_REJECTED' || t === 'MANUAL_ASSIGNMENT_EXPIRED') {
+    return {
+      icon: 'close-circle',
+      iconColor: '#E11D48',
+      iconBg: '#FFF1F2',
+      badgeBg: '#FFE4E6',
+      label: 'Declined',
+    };
+  }
+  if (t === 'WORKER_ARRIVING' || t === 'WORKER_ARRIVED' || t === 'WORKER_NEARBY') {
+    return {
+      icon: 'navigate',
+      iconColor: '#0284C7',
+      iconBg: '#F0F9FF',
+      badgeBg: '#E0F2FE',
+      label: 'Location Alert',
+    };
+  }
+  if (t === 'JOB_STARTED' || t === 'ROUTE_STARTED') {
+    return {
+      icon: 'play-circle',
+      iconColor: '#D97706',
+      iconBg: '#FFFBEB',
+      badgeBg: '#FEF3C7',
+      label: 'In Progress',
+    };
+  }
+  if (t === 'JOB_COMPLETED') {
+    return {
+      icon: 'ribbon',
+      iconColor: '#059669',
+      iconBg: '#ECFDF5',
+      badgeBg: '#D1FAE5',
+      label: 'Job Completed',
+    };
+  }
+  if (t === 'PAYMENT_SUCCESS' || t === 'PAYOUT_PROCESSED') {
+    return {
+      icon: 'cash',
+      iconColor: '#059669',
+      iconBg: '#ECFDF5',
+      badgeBg: '#D1FAE5',
+      label: 'Payment & Payout',
+    };
+  }
+  if (t === 'LOW_WALLET_BALANCE') {
+    return {
+      icon: 'warning',
+      iconColor: '#D97706',
+      iconBg: '#FFFBEB',
+      badgeBg: '#FEF3C7',
+      label: 'Low Balance',
+    };
+  }
+
+  return {
+    icon: 'notifications',
+    iconColor: '#3C01A7',
+    iconBg: '#F5F3FF',
+    badgeBg: '#EDE9FE',
+    label: 'Notification',
+  };
+}
+
+function formatRelativeTime(dateString: string): string {
+  try {
+    const now = Date.now();
+    const then = new Date(dateString).getTime();
+    const diffSec = Math.floor((now - then) / 1000);
+
+    if (diffSec < 60) return 'Just now';
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+    if (diffSec < 172800) return 'Yesterday';
+
+    return new Date(dateString).toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+    });
+  } catch (e) {
+    return '';
   }
 }
 
 export function NotificationItem({ notification, onPress }: NotificationItemProps) {
   const style = getNotificationStyle(notification.type);
-
-  const timeLabel = new Date(notification.created_at).toLocaleDateString('en-IN', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const timeLabel = formatRelativeTime(notification.created_at);
 
   return (
-    <TouchableOpacity disabled={!onPress} onPress={onPress} activeOpacity={0.9} className="mb-3">
-      <Card 
-        variant={notification.is_read ? 'muted' : 'default'} 
-        className={`p-4 relative overflow-hidden border ${
-          notification.is_read ? 'border-border-primary' : 'border-border-secondary'
-        }`}
-      >
-        {!notification.is_read && (
-          <View className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-l-3xl" />
-        )}
-        <View className="flex-row items-start">
-          <View 
-            style={{ backgroundColor: style.iconBg }} 
-            className="w-11 h-11 rounded-2xl items-center justify-center mr-3 flex-shrink-0"
-          >
-            <Ionicons name={style.icon as any} size={20} color={style.iconColor} />
-          </View>
-          <View className="flex-1">
-            <View className="flex-row justify-between items-center mb-1">
-              <View 
-                style={{ backgroundColor: `${style.iconColor}15` }} 
-                className="px-2 py-0.5 rounded-md"
-              >
-                <Text style={{ color: style.iconColor }} className="text-[9px] font-extrabold uppercase tracking-wide">
-                  {style.label}
-                </Text>
-              </View>
-              {!notification.is_read && (
-                <View className="w-2 h-2 rounded-full bg-primary" />
-              )}
-            </View>
-            <Text className="text-text-primary text-sm font-extrabold mb-1 leading-5" numberOfLines={1}>
-              {notification.title}
-            </Text>
-            <Text className="text-text-secondary text-xs leading-4.5 mb-2" numberOfLines={2}>
-              {notification.body}
-            </Text>
-            <Text className="text-text-muted text-[10px] font-bold">{timeLabel}</Text>
-          </View>
+    <TouchableOpacity
+      disabled={!onPress}
+      onPress={onPress}
+      activeOpacity={0.85}
+      style={[
+        styles.card,
+        notification.is_read ? styles.cardRead : styles.cardUnread,
+      ]}
+    >
+      {!notification.is_read && <View style={styles.unreadStripe} />}
+
+      <View style={styles.row}>
+        <View style={[styles.iconWrapper, { backgroundColor: style.iconBg }]}>
+          <Ionicons name={style.icon} size={22} color={style.iconColor} />
         </View>
-      </Card>
+
+        <View style={styles.bodyContainer}>
+          <View style={styles.topRow}>
+            <View style={[styles.badge, { backgroundColor: style.badgeBg }]}>
+              <Text style={[styles.badgeText, { color: style.iconColor }]}>
+                {style.label}
+              </Text>
+            </View>
+
+            <View style={styles.timeRow}>
+              {!notification.is_read && <View style={styles.unreadDot} />}
+              <Text style={styles.timeText}>{timeLabel}</Text>
+            </View>
+          </View>
+
+          <Text style={styles.title} numberOfLines={2}>
+            {notification.title}
+          </Text>
+
+          <Text style={styles.body} numberOfLines={3}>
+            {notification.body}
+          </Text>
+        </View>
+      </View>
     </TouchableOpacity>
   );
 }
+
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 10,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  cardUnread: {
+    borderColor: '#E9D5FF',
+    backgroundColor: '#FAF8FF',
+    shadowColor: '#3C01A7',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  cardRead: {
+    borderColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+  },
+  unreadStripe: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    backgroundColor: '#7C3AED',
+    borderTopLeftRadius: 18,
+    borderBottomLeftRadius: 18,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  iconWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    flexShrink: 0,
+  },
+  bodyContainer: {
+    flex: 1,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  badge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+  },
+  badgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  unreadDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#7C3AED',
+  },
+  timeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  title: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 2,
+    lineHeight: 18,
+  },
+  body: {
+    fontSize: 11.5,
+    fontWeight: '500',
+    color: '#475569',
+    lineHeight: 16,
+  },
+});

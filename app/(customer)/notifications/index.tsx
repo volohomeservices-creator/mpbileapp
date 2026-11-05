@@ -63,9 +63,13 @@ export default function CustomerNotificationsScreen() {
     markAllReadMutation.mutate();
   };
 
-  const handleNotificationPress = (id: string, isRead: boolean) => {
-    if (!isRead) {
-      markReadMutation.mutate(id);
+  const handleNotificationPress = (item: any) => {
+    if (!item.is_read) {
+      markReadMutation.mutate(item.id);
+    }
+    const bookingId = item.data?.bookingId || item.data?.booking_id;
+    if (bookingId) {
+      router.push(`/(customer)/bookings/${bookingId}` as any);
     }
   };
 
@@ -118,7 +122,7 @@ export default function CustomerNotificationsScreen() {
           renderItem={({ item }) => (
             <NotificationItem
               notification={item}
-              onPress={() => handleNotificationPress(item.id, item.is_read)}
+              onPress={() => handleNotificationPress(item)}
             />
           )}
           ListEmptyComponent={
