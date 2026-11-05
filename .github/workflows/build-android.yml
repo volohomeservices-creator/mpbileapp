@@ -1,22 +1,31 @@
-name: Build Android AAB
+name: Build Android APK & AAB
 
 on:
   workflow_dispatch:
     inputs:
-      profile:
-        description: 'EAS Build Profile'
+      build_format:
+        description: 'Target Build Format'
         required: true
-        default: 'production'
+        default: 'apk'
         type: choice
         options:
-          - production
+          - apk
+          - both
+          - aab
+      profile:
+        description: 'EAS Profile for APK'
+        required: true
+        default: 'preview'
+        type: choice
+        options:
           - preview
+          - apk
   push:
     branches: [main]
 
 jobs:
   build-android:
-    name: Build Android AAB
+    name: Build Android (${{ github.event.inputs.build_format || 'apk' }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -55,19 +64,44 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN || secrets.EXPO }}
 
-      - name: Build Android AAB
+      - name: Build Android App (APK / AAB)
         run: |
           mkdir -p ./build
-          eas build \
-            --platform android \
-            --profile ${{ github.event.inputs.profile || 'production' }} \
-            --local \
-            --output ./build/volo-mobile.aab \
-            --non-interactive
+          BUILD_FORMAT="${{ github.event.inputs.build_format || 'apk' }}"
+          echo "Target build format: $BUILD_FORMAT"
+
+          if [ "$BUILD_FORMAT" = "apk" ] || [ "$BUILD_FORMAT" = "both" ]; then
+            echo "🚀 Building Android APK (preview profile)..."
+            eas build \
+              --platform android \
+              --profile ${{ github.event.inputs.profile || 'preview' }} \
+              --local \
+              --output ./build/volo-mobile.apk \
+              --non-interactive
+          fi
+
+          if [ "$BUILD_FORMAT" = "aab" ] || [ "$BUILD_FORMAT" = "both" ]; then
+            echo "🚀 Building Android AAB (production profile)..."
+            eas build \
+              --platform android \
+              --profile production \
+              --local \
+              --output ./build/volo-mobile.aab \
+              --non-interactive
+          fi
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN || secrets.EXPO }}
 
+      - name: Upload APK artifact
+        if: ${{ hashFiles('build/volo-mobile.apk') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: volo-android-apk-${{ github.run_number }}
+          path: build/volo-mobile.apk
+          retention-days: 90
+
       - name: Upload AAB artifact
+        if: ${{ hashFiles('build/volo-mobile.aab') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: volo-android-aab-${{ github.run_number }}
@@ -78,11 +112,16 @@ jobs:
         run: |
           echo "## ✅ Android Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Profile | ${{ github.event.inputs.profile || 'production' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Run | #${{ github.run_number }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Branch | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Artifact | Status | File Path |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|-----------|" >> $GITHUB_STEP_SUMMARY
+          if [ -f "build/volo-mobile.apk" ]; then
+            echo "| 📱 **Direct Install APK** | ✅ Ready | \`volo-mobile.apk\` |" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f "build/volo-mobile.aab" ]; then
+            echo "| 📦 **Play Store AAB** | ✅ Ready | \`volo-mobile.aab\` |" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📦 Download the AAB from the **Artifacts** section below." >> $GITHUB_STEP_SUMMARY
+          echo "### 📥 How to Download & Install APK on Android:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Go to the **Summary** tab of this GitHub Actions run." >> $GITHUB_STEP_SUMMARY
+          echo "2. Under **Artifacts**, click \`volo-android-apk-${{ github.run_number }}\` to download." >> $GITHUB_STEP_SUMMARY
+          echo "3. Transfer \`volo-mobile.apk\` to your Android phone and tap to install directly!" >> $GITHUB_STEP_SUMMARY
