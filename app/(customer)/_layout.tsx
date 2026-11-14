@@ -11,7 +11,7 @@ export default function CustomerLayout() {
     >
       <Tabs.Screen name="home" options={{ title: 'Home' }} />
       <Tabs.Screen name="bookings" options={{ title: 'Bookings' }} />
-      <Tabs.Screen name="wallet/index" options={{ title: 'Book Now' }} />
+      <Tabs.Screen name="wallet/index" options={{ title: 'Services' }} />
       <Tabs.Screen name="notifications/index" options={{ title: 'My Orders' }} />
       <Tabs.Screen name="profile/index" options={{ title: 'Profile' }} />
 

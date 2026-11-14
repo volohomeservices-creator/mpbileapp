@@ -794,7 +794,11 @@ export default function CreateBookingScreen() {
   if (step === 'catalog') {
     return (
       <View className="flex-1 bg-white">
-        <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+        <ScrollView
+          className="flex-1"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: getTotalCount() > 0 ? 175 : 105 }}
+        >
           {/* Header Image Slider (Dynamic Category Image or Hero Banner) */}
           <View className="relative h-60 bg-[#18073E]">
             {(() => {
@@ -1307,11 +1311,14 @@ export default function CreateBookingScreen() {
           </View>
         </ScrollView>
 
-        {/* Floating bottom checkout bar (Modernized, Safe-Area aware, No text truncation) */}
+        {/* Floating bottom checkout bar (Floats elegantly above the custom navigation bar) */}
         {getTotalCount() > 0 ? (
           <View
-            className="absolute bottom-0 left-0 right-0 bg-white border-t border-border-primary px-4 pt-3 flex-row justify-between items-center shadow-premium"
-            style={{ paddingBottom: Math.max(insets.bottom, 12) }}
+            className="absolute left-4 right-4 bg-white border border-border-primary/80 rounded-2xl px-4 py-2.5 flex-row justify-between items-center shadow-premium"
+            style={{
+              bottom: Platform.OS === 'ios' ? 84 : 76,
+              zIndex: 90,
+            }}
           >
             <TouchableOpacity
               activeOpacity={0.85}

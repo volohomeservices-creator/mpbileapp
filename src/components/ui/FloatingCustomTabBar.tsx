@@ -16,18 +16,21 @@ export default function FloatingCustomTabBar({ state, descriptors, navigation }:
   const router = useRouter();
   const pathname = usePathname();
 
-  // Hide floating tab bar on booking checkout, tracking, and cart screens so forms and buttons are never obscured
   const currentRoute = state.routes[state.index];
   const nestedState = (currentRoute as any)?.state;
   const nestedRouteName = nestedState?.routes?.[nestedState?.index]?.name;
+
+  const isServiceSection =
+    pathname.includes('/bookings/create') ||
+    nestedRouteName === 'create';
+
+  // Hide floating tab bar only on active live-tracking ([id]) and cart screens so forms and maps are never obscured
   if (
-    nestedRouteName === 'create' ||
     nestedRouteName === '[id]' ||
     currentRoute?.name === 'cart/index' ||
     currentRoute?.name === 'cart' ||
-    pathname.includes('/bookings/create') ||
     pathname.includes('/cart') ||
-    (pathname.includes('/bookings/') && pathname !== '/bookings')
+    (pathname.includes('/bookings/') && !pathname.includes('/bookings/create') && pathname !== '/bookings')
   ) {
     return null;
   }
@@ -42,7 +45,7 @@ export default function FloatingCustomTabBar({ state, descriptors, navigation }:
       case 'bookings':
         return { label: 'Bookings', iconActive: 'calendar', iconInactive: 'calendar-outline' };
       case 'wallet/index':
-        return { label: 'Book Now', iconActive: 'calendar-sharp', iconInactive: 'calendar-outline' };
+        return { label: 'Services', iconActive: 'grid', iconInactive: 'grid-outline' };
       case 'notifications/index':
         return { label: 'My Orders', iconActive: 'cube', iconInactive: 'cube-outline' };
       case 'profile/index':
@@ -67,13 +70,18 @@ export default function FloatingCustomTabBar({ state, descriptors, navigation }:
     <View style={styles.container}>
       <View style={styles.pillBar}>
         {visibleRoutes.map((route) => {
-          const isFocused = state.routes[state.index].key === route.key;
+          const isFocused = isServiceSection
+            ? route.name === 'wallet/index'
+            : state.routes[state.index].key === route.key;
           const { label, iconActive, iconInactive } = getTabInfo(route.name);
 
           const onPress = () => {
             triggerSmoothAppleAnimation();
 
             if (route.name === 'wallet/index') {
+              if (isServiceSection) {
+                return;
+              }
               router.push('/(customer)/bookings/create');
               return;
             }

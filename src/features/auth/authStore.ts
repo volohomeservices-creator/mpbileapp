@@ -54,6 +54,24 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   clearAuth: async () => {
+    // 0. Unregister push notification device token on server before clearing credentials
+    try {
+      if (Platform.OS !== 'web') {
+        const messaging = require('@react-native-firebase/messaging').default;
+        const fcmToken = await messaging().getToken();
+        if (fcmToken) {
+          const { removeDeviceToken } = await import('@/api/deviceTokens');
+          await removeDeviceToken(fcmToken).catch(() => {});
+        }
+      }
+    } catch {}
+
+    // Invalidate server session
+    try {
+      const { apiPost } = await import('@/api/client');
+      await apiPost('/api/auth/logout', {}).catch(() => {});
+    } catch {}
+
     // 1. Clear credentials
     await storage.deleteItem(SECURE_KEYS.TOKEN);
     await storage.deleteItem(SECURE_KEYS.REFRESH_TOKEN);
@@ -62,6 +80,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     // 2. Clear user-specific caches
     await storage.deleteItem('volo_guidance_cache');
     await storage.deleteItem('volo_worker_service_city');
+    await storage.deleteItem('volo_customer_service_city');
     await storage.deleteItem('volo_cart_storage');
 
     // 3. Wipe React Query in-memory cache
