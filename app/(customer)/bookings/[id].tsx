@@ -373,7 +373,7 @@ export default function BookingDetailScreen() {
               </View>
               <View className="flex-1">
                 <Text className="text-purple-950 font-extrabold text-sm">
-                  Scheduled Appointment 📅
+                  Scheduled Appointment
                 </Text>
                 <Text className="text-purple-800 text-xs font-bold mt-0.5">
                   {new Date(booking.scheduled_at).toLocaleDateString('en-IN', {
@@ -453,7 +453,7 @@ export default function BookingDetailScreen() {
               </View>
               <View className="flex-1">
                 <Text className="text-amber-900 font-extrabold text-sm">
-                  captain Has Arrived! 📍
+                  Captain Has Arrived!
                 </Text>
                 <Text className="text-amber-700 text-xs mt-0.5">
                   Please share the 4-digit PIN below to start your service.
@@ -469,7 +469,7 @@ export default function BookingDetailScreen() {
               </View>
               <View className="flex-1">
                 <Text className="text-blue-900 font-extrabold text-sm">
-                  captain is En Route 🚗
+                  Captain is En Route
                 </Text>
                 <Text className="text-blue-700 text-xs mt-0.5">
                   Track live location on the map below.
@@ -485,7 +485,7 @@ export default function BookingDetailScreen() {
               </View>
               <View className="flex-1">
                 <Text className="text-purple-900 font-extrabold text-sm">
-                  Work in Progress ⚡
+                  Work in Progress
                 </Text>
                 <Text className="text-purple-700 text-xs mt-0.5">
                   Your captain is completing your service.
@@ -501,7 +501,7 @@ export default function BookingDetailScreen() {
               </View>
               <View className="flex-1">
                 <Text className="text-emerald-900 font-extrabold text-sm">
-                  Service Completed! 🎉
+                  Service Completed!
                 </Text>
                 <Text className="text-emerald-700 text-xs mt-0.5">
                   Thank you for using Volo Home Services.
@@ -569,7 +569,7 @@ export default function BookingDetailScreen() {
                 <View className="mt-3 bg-amber-50 rounded-xl p-2.5 border border-amber-200/70 flex-row items-center gap-2">
                   <Ionicons name="lock-closed" size={14} color="#D97706" />
                   <Text className="text-amber-800 text-[11px] font-medium flex-1">
-                    🔒 Do not share this OTP over phone. Share only when the professional arrives.
+                    Do not share this OTP over phone. Share only when the professional arrives.
                   </Text>
                 </View>
               </View>

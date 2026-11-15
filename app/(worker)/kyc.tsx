@@ -360,7 +360,7 @@ export default function WorkerKycScreen() {
 
       if (res.success) {
         Alert.alert(
-          'KYC Submitted Successfully! 🎉',
+          'KYC Submitted Successfully',
           'Your documents and bank details have been submitted for verification. The VOLO team will review and approve your profile within 24 hours.',
           [
             {

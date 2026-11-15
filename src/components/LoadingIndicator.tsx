@@ -2,9 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated, Easing, Platform } from 'react-native';
 
 const STATUS_MESSAGES = [
-  '⚡ Matching verified experts nearby...',
-  '🛡️ Securing Volo 100% vSafe guarantee...',
-  '✨ Preparing your home services hub...',
+  'Matching verified experts nearby...',
+  'Securing Volo 100% vSafe guarantee...',
+  'Preparing your home services hub...',
 ];
 
 export function LoadingIndicator() {

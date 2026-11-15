@@ -560,9 +560,10 @@ export default function OtpVerifyScreen() {
                 </TouchableOpacity>
               </View>
 
-              <View className="items-center mt-6">
+              <View className="flex-row items-center justify-center mt-6 gap-1.5">
+                <Ionicons name="lock-closed" size={13} color="#94A3B8" />
                 <Text className="text-center text-slate-400 text-xs font-medium">
-                  🔒 Your PIN is securely encrypted with bcrypt.
+                  Your PIN is securely encrypted with bcrypt.
                 </Text>
               </View>
             </View>

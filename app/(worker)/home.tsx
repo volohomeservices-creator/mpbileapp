@@ -93,9 +93,10 @@ const OfferTimer = ({ expiresAt, onExpire }: { expiresAt: string; onExpire: () =
   }
 
   return (
-    <View className={`px-2 py-0.5 rounded-full border ${timeLeft < 60 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+    <View className={`px-2 py-0.5 rounded-full border flex-row items-center ${timeLeft < 60 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+      <Ionicons name="timer-outline" size={10} color={timeLeft < 60 ? '#DC2626' : '#B45309'} style={{ marginRight: 3 }} />
       <Text className={`text-[10px] font-bold ${timeLeft < 60 ? 'text-red-600' : 'text-amber-700'}`}>
-        ⏰ {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
+        {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
       </Text>
     </View>
   );
@@ -1130,9 +1131,12 @@ export default function WorkerHomeScreen() {
                         <Text className="text-slate-900 text-sm font-extrabold">
                           {offer.serviceName}
                         </Text>
-                        <Text className="text-slate-500 text-xs mt-0.5">
-                          📍 {offer.distanceKm} km away
-                        </Text>
+                        <View className="flex-row items-center mt-0.5">
+                          <Ionicons name="location-outline" size={12} color="#64748B" style={{ marginRight: 3 }} />
+                          <Text className="text-slate-500 text-xs">
+                            {offer.distanceKm} km away
+                          </Text>
+                        </View>
                       </View>
                       <OfferTimer
                         expiresAt={offer.expiresAt} 

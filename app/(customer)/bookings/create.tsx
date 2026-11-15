@@ -201,6 +201,7 @@ export default function CreateBookingScreen() {
 
   // Photo attachments (Max 3, mirrors website flow)
   const [attachedImages, setAttachedImages] = useState<string[]>([]);
+  const [photoPickerVisible, setPhotoPickerVisible] = useState(false);
 
   // Promo Code state (mirrors website flow)
   const [promoCodeInput, setPromoCodeInput] = useState('');
@@ -490,76 +491,58 @@ export default function CreateBookingScreen() {
     }
   }, []);
 
-  // Image Attachment Picker (Direct Camera & Gallery options)
+  const openCamera = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        showAlert('Permission Needed', 'Camera permission is required to capture photos of the issue.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setAttachedImages((prev) => [...prev, result.assets[0].uri].slice(0, 3));
+      }
+    } catch (err) {
+      console.warn('Camera capture error:', err);
+    }
+  };
+
+  const openGallery = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        showAlert('Permission Needed', 'Photo gallery permission is required to select photos.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setAttachedImages((prev) => [...prev, result.assets[0].uri].slice(0, 3));
+      }
+    } catch (err) {
+      console.warn('Gallery picker error:', err);
+    }
+  };
+
+  // Image Attachment Picker (Opens clean action modal with vector icons)
   const handlePickImage = async () => {
     if (attachedImages.length >= 3) {
       showAlert('Limit Reached', 'You can attach up to 3 photos of the issue.');
       return;
     }
 
-    const openCamera = async () => {
-      try {
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== 'granted') {
-          showAlert('Permission Needed', 'Camera permission is required to capture photos of the issue.');
-          return;
-        }
-        const result = await ImagePicker.launchCameraAsync({
-          allowsEditing: true,
-          quality: 0.7,
-        });
-        if (!result.canceled && result.assets && result.assets.length > 0) {
-          setAttachedImages((prev) => [...prev, result.assets[0].uri].slice(0, 3));
-        }
-      } catch (err) {
-        console.warn('Camera capture error:', err);
-      }
-    };
-
-    const openGallery = async () => {
-      try {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-          showAlert('Permission Needed', 'Photo gallery permission is required to select photos.');
-          return;
-        }
-        const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: true,
-          quality: 0.7,
-        });
-        if (!result.canceled && result.assets && result.assets.length > 0) {
-          setAttachedImages((prev) => [...prev, result.assets[0].uri].slice(0, 3));
-        }
-      } catch (err) {
-        console.warn('Gallery picker error:', err);
-      }
-    };
-
     if (Platform.OS === 'web') {
       openGallery();
       return;
     }
 
-    Alert.alert(
-      'Attach Problem Photo',
-      'Directly capture the issue or choose an existing photo:',
-      [
-        {
-          text: '📸 Take Photo (Camera)',
-          onPress: openCamera,
-        },
-        {
-          text: '🖼️ Choose from Gallery',
-          onPress: openGallery,
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-      ],
-      { cancelable: true }
-    );
+    setPhotoPickerVisible(true);
   };
 
   const handleRemoveImage = (index: number) => {
@@ -1682,7 +1665,12 @@ export default function CreateBookingScreen() {
             <Card variant="default" className="p-4 flex-row justify-between items-center border border-[#3C01A7]/20 bg-[#F0EBFB]/40">
               <View className="flex-1 mr-3">
                 <Text className="text-text-primary text-sm font-black">{selectedItemData.name}</Text>
-                <Text className="text-text-secondary text-[11px] font-semibold mt-0.5">⏱ {selectedItemData.estimated_mins} mins</Text>
+                <View className="flex-row items-center mt-0.5">
+                  <Ionicons name="time-outline" size={11} color="#8E84B0" style={{ marginRight: 3 }} />
+                  <Text className="text-text-secondary text-[11px] font-semibold">
+                    {selectedItemData.estimated_mins} mins
+                  </Text>
+                </View>
               </View>
               <Text className="text-[#3C01A7] text-base font-black">₹{selectedItemData.base_price}</Text>
             </Card>
@@ -2100,9 +2088,10 @@ export default function CreateBookingScreen() {
             </View>
 
             {isWalletInsufficient && paymentMode === 'WALLET' && (
-              <View className="mt-2 p-2.5 bg-rose-50 rounded-xl border border-rose-200">
-                <Text className="text-rose-700 text-[10px] font-bold">
-                  ⚠️ Insufficient wallet balance. Please switch to Cash / Online Pay or recharge your wallet.
+              <View className="mt-2 p-2.5 bg-rose-50 rounded-xl border border-rose-200 flex-row items-center gap-1.5">
+                <Ionicons name="alert-circle" size={13} color="#BE123C" />
+                <Text className="text-rose-700 text-[10px] font-bold flex-1">
+                  Insufficient wallet balance. Please switch to Cash / Online Pay or recharge your wallet.
                 </Text>
               </View>
             )}
@@ -2122,10 +2111,13 @@ export default function CreateBookingScreen() {
             </View>
 
             {comboDiscount > 0 && (
-              <View className="flex-row justify-between mb-2 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
-                <Text className="text-emerald-800 text-xs font-bold">
-                  🎉 {comboDiscountLabel}
-                </Text>
+              <View className="flex-row justify-between items-center mb-2 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
+                <View className="flex-row items-center">
+                  <Ionicons name="pricetag" size={13} color="#059669" style={{ marginRight: 5 }} />
+                  <Text className="text-emerald-800 text-xs font-bold">
+                    {comboDiscountLabel}
+                  </Text>
+                </View>
                 <Text className="text-emerald-700 text-xs font-black">-₹{comboDiscount}</Text>
               </View>
             )}
@@ -2247,6 +2239,80 @@ export default function CreateBookingScreen() {
         detectedCity={address.split(',')[1]?.trim() || address.split(',')[0]?.trim()}
         onSelectWarangal={() => setMapPinModalVisible(true)}
       />
+
+      {/* Clean Vector-Icon Problem Photo Picker Bottom Modal */}
+      <Modal
+        visible={photoPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPhotoPickerVisible(false)}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setPhotoPickerVisible(false)}
+          className="flex-1 bg-black/60 justify-end"
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            className="bg-white rounded-t-3xl p-6 pb-9 shadow-2xl"
+          >
+            <View className="flex-row items-center justify-between pb-4 mb-4 border-b border-border-primary">
+              <View className="flex-row items-center gap-2.5">
+                <View className="w-9 h-9 rounded-xl bg-purple-100 items-center justify-center">
+                  <Ionicons name="camera" size={20} color="#3C01A7" />
+                </View>
+                <Text className="text-text-primary text-base font-black">Upload Problem Photo</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setPhotoPickerVisible(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 items-center justify-center"
+              >
+                <Ionicons name="close" size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text className="text-text-secondary text-xs font-semibold mb-4">
+              Capture the issue directly using your device camera or pick from gallery (Max 3).
+            </Text>
+
+            <TouchableOpacity
+              onPress={() => {
+                setPhotoPickerVisible(false);
+                openCamera();
+              }}
+              activeOpacity={0.8}
+              className="flex-row items-center p-4 rounded-2xl border border-purple-200 bg-purple-50/60 mb-3"
+            >
+              <View className="w-11 h-11 rounded-xl bg-[#3C01A7] items-center justify-center mr-3.5 shadow-xs">
+                <Ionicons name="camera" size={22} color="#FFFFFF" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-[#1E1535] text-sm font-black">Take Photo (Camera)</Text>
+                <Text className="text-text-secondary text-xs">Capture the issue live with device camera</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#3C01A7" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                setPhotoPickerVisible(false);
+                openGallery();
+              }}
+              activeOpacity={0.8}
+              className="flex-row items-center p-4 rounded-2xl border border-border-secondary bg-white"
+            >
+              <View className="w-11 h-11 rounded-xl bg-slate-100 items-center justify-center mr-3.5 shadow-xs">
+                <Ionicons name="images" size={22} color="#3C01A7" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-[#1E1535] text-sm font-black">Choose from Gallery</Text>
+                <Text className="text-text-secondary text-xs">Select existing photos from device gallery</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#8E84B0" />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }

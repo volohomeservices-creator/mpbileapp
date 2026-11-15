@@ -212,7 +212,7 @@ export default function WorkerJobDetailScreen() {
           hour: '2-digit',
           minute: '2-digit'
         });
-        showAlert('Scheduled Shift Confirmed! 📅', `Shift confirmed for ${timeStr}. This appointment is saved in your Upcoming Jobs list.`);
+        showAlert('Scheduled Shift Confirmed', `Shift confirmed for ${timeStr}. This appointment is saved in your Upcoming Jobs list.`);
       } else {
         showAlert(t('workerHome.jobAccepted'), t('workerHome.readyToStart'));
       }
@@ -315,7 +315,7 @@ export default function WorkerJobDetailScreen() {
     try {
       const res = await completeJob(id);
       if (res.success) {
-        showAlert('Shift Completed! 🎉', t('jobs.congratsMsg'), () => {
+        showAlert('Shift Completed!', t('jobs.congratsMsg'), () => {
           queryClient.invalidateQueries({ queryKey: ['worker-dashboard'] });
           router.replace('/(worker)/home');
         });
@@ -455,7 +455,7 @@ export default function WorkerJobDetailScreen() {
                 <Ionicons name={job?.scheduled_at ? "calendar" : "flash"} size={16} color="#3C01A7" />
                 <View className="flex-1">
                   <Text className="text-[#3C01A7] font-extrabold text-xs">
-                    {job?.scheduled_at ? '📅 Scheduled Order Offer' : '⚡ New Order Offer (2-Min Window)'}
+                    {job?.scheduled_at ? 'Scheduled Order Offer' : 'New Order Offer (2-Min Window)'}
                   </Text>
                   <Text className="text-slate-500 text-[10px]">
                     {job?.scheduled_at
@@ -523,7 +523,7 @@ export default function WorkerJobDetailScreen() {
                 <Ionicons name="calendar-outline" size={20} color="#7C3AED" />
                 <View className="flex-1">
                   <Text className="text-purple-950 font-extrabold text-xs">
-                    Reserved Scheduled Shift 📅
+                    Reserved Scheduled Shift
                   </Text>
                   <Text className="text-purple-700 text-[11px] font-semibold mt-0.5">
                     {new Date(job.scheduled_at).toLocaleDateString('en-IN', {
@@ -563,7 +563,7 @@ export default function WorkerJobDetailScreen() {
           >
             <Ionicons name="location" size={20} color="white" />
             <Text className="text-white font-extrabold text-base">
-              {t('jobs.arrivedAtLocation') || 'I Have Arrived at Location 📍'}
+              {t('jobs.arrivedAtLocation') || 'I Have Arrived at Location'}
             </Text>
           </TouchableOpacity>
         );
@@ -726,7 +726,7 @@ export default function WorkerJobDetailScreen() {
               </View>
               <View className="flex-1">
                 <Text className="text-purple-900 font-extrabold text-sm">
-                  Job In Progress ⚡
+                  Job In Progress
                 </Text>
                 <Text className="text-purple-700 text-xs mt-0.5">
                   Service is currently running. Tap Complete when finished.

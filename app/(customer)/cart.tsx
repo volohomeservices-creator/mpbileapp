@@ -244,10 +244,13 @@ export default function CartScreen() {
               </View>
 
               {comboDiscount > 0 && (
-                <View className="flex-row justify-between mb-2 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
-                  <Text className="text-emerald-800 text-xs font-bold">
-                    🎉 {comboDiscountLabel}
-                  </Text>
+                <View className="flex-row justify-between items-center mb-2 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
+                  <View className="flex-row items-center">
+                    <Ionicons name="pricetag" size={13} color="#059669" style={{ marginRight: 5 }} />
+                    <Text className="text-emerald-800 text-xs font-bold">
+                      {comboDiscountLabel}
+                    </Text>
+                  </View>
                   <Text className="text-emerald-700 text-xs font-black">-₹{comboDiscount}</Text>
                 </View>
               )}

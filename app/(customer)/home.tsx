@@ -356,9 +356,9 @@ export default function CustomerHomeScreen() {
             <View className="px-5 pt-4 pb-10 flex-row relative z-10">
               {/* Left Column: Text, Value Props, and CTA */}
               <View className="flex-1 pr-1 z-20 justify-center">
-                {/* Pill Tag: 🏠 Home Services, Simplified */}
+                {/* Pill Tag: Real Home Icon & Text */}
                 <View className="bg-white/10 border border-white/20 rounded-full px-3 py-1 flex-row items-center self-start mb-2.5">
-                  <Text className="mr-1 text-xs">🏠</Text>
+                  <Ionicons name="home" size={11} color="#FFFFFF" style={{ marginRight: 5 }} />
                   <Text className="text-white/95 text-[11px] font-bold">
                     {heroBanner?.discount_label || 'Home Services, Simplified'}
                   </Text>
@@ -721,9 +721,12 @@ export default function CustomerHomeScreen() {
                               {service.name}
                             </Text>
                             {service.estimated_mins && (
-                              <Text className="text-[#8E84B0] text-[10px] font-semibold mb-2">
-                                ⏱ {service.estimated_mins} mins
-                              </Text>
+                              <View className="flex-row items-center mb-2">
+                                <Ionicons name="time-outline" size={11} color="#8E84B0" style={{ marginRight: 3 }} />
+                                <Text className="text-[#8E84B0] text-[10px] font-semibold">
+                                  {service.estimated_mins} mins
+                                </Text>
+                              </View>
                             )}
                           </View>
 

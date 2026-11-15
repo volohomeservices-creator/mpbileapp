@@ -73,7 +73,7 @@ export const EmergencySupportModal: React.FC<EmergencySupportModalProps> = ({
       });
 
       Alert.alert(
-        '🚨 Emergency SOS Transmitted',
+        'Emergency SOS Transmitted',
         'Your distress signal with live GPS coordinates has been broadcast to the Volo Safety Operations Desk. Our rapid response officers will call your registered phone number immediately.',
         [
           {
