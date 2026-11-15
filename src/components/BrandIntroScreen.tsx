@@ -17,8 +17,8 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const RING_SIZE = Math.min(SCREEN_WIDTH * 0.74, 290);
 const RADIUS = RING_SIZE / 2 - 12;
 const CENTER = RING_SIZE / 2;
-const LOGO_SIZE = Math.min(SCREEN_WIDTH * 0.35, 136);
-const WORDMARK_WIDTH = Math.min(SCREEN_WIDTH * 0.54, 210);
+const LOGO_SIZE = Math.min(SCREEN_WIDTH * 0.40, 156);
+const WORDMARK_WIDTH = Math.min(SCREEN_WIDTH * 0.70, 275);
 const WORDMARK_HEIGHT = WORDMARK_WIDTH * 0.28;
 const WAVE_HEIGHT = Math.min(SCREEN_HEIGHT * 0.23, 195);
 
@@ -590,10 +590,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   taglineText: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     color: '#5F537C',
-    letterSpacing: 2,
+    letterSpacing: 2.2,
     textAlign: 'center',
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
   },

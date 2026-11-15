@@ -255,7 +255,7 @@ export default function CustomerHomeScreen() {
         >
           <Image
             source={require('../../assets/volo logo 2.png')}
-            style={{ width: 92, height: 30 }}
+            style={{ width: 112, height: 36 }}
             contentFit="contain"
             contentPosition="left center"
           />
@@ -406,32 +406,32 @@ export default function CustomerHomeScreen() {
                   </View>
                 </View>
 
-                {/* Glowing Hero CTA Button */}
+                {/* Glowing Hero CTA Button (Enlarged & Touch-Friendly) */}
                 <TouchableOpacity
                   onPress={() => handleCategoryPress(heroBanner?.action_url || undefined)}
                   activeOpacity={0.88}
-                  className="self-start active:scale-95 shadow-xl"
+                  className="self-start active:scale-95 shadow-xl mt-1.5"
                 >
                   <LinearGradient
-                    colors={['#8B5CF6', '#7C3AED', '#5B21B6']}
+                    colors={['#8B5CF6', '#7C3AED', '#4C1D95']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={{
                       borderRadius: 999,
-                      paddingLeft: 18,
-                      paddingRight: 8,
-                      paddingVertical: 9,
+                      paddingLeft: 22,
+                      paddingRight: 10,
+                      paddingVertical: 12,
                       flexDirection: 'row',
                       alignItems: 'center',
-                      borderWidth: 1,
-                      borderColor: 'rgba(255,255,255,0.25)',
+                      borderWidth: 1.5,
+                      borderColor: 'rgba(255,255,255,0.35)',
                     }}
                   >
-                    <Text className="text-white text-xs font-black mr-2">
-                      {heroBanner?.subtitle || 'Book a service'}
+                    <Text className="text-white text-sm font-black mr-3 tracking-wide">
+                      {heroBanner?.subtitle || 'Book a Service'}
                     </Text>
-                    <View className="w-7 h-7 rounded-full bg-white items-center justify-center shadow-sm">
-                      <Ionicons name="arrow-forward" size={14} color="#6D28D9" />
+                    <View className="w-8 h-8 rounded-full bg-white items-center justify-center shadow-md">
+                      <Ionicons name="arrow-forward" size={15} color="#6D28D9" />
                     </View>
                   </LinearGradient>
                 </TouchableOpacity>
@@ -468,11 +468,11 @@ export default function CustomerHomeScreen() {
                   />
                 </View>
               ) : !bannersLoading ? (
-                /* Default fallback captain portrait only when genuinely finished loading with no hero banner */
+                /* Fallback Hero: Electrician & Plumber Duo Presentation */
                 <View
                   style={{
                     position: 'absolute',
-                    right: -10,
+                    right: 0,
                     bottom: 0,
                     top: 0,
                     width: '52%',
@@ -481,15 +481,29 @@ export default function CustomerHomeScreen() {
                   }}
                 >
                   <Image
-                    source={require('../../assets/hero_technician.jpg')}
+                    source={require('../../assets/volo_technician_plumber.png')}
                     style={{
-                      width: '100%',
-                      height: '100%',
-                      borderBottomRightRadius: 28,
+                      position: 'absolute',
+                      right: 68,
+                      bottom: 0,
+                      width: 135,
+                      height: 185,
+                      opacity: 0.95,
                     }}
-                    contentFit="cover"
-                    contentPosition="top right"
-                    cachePolicy="memory-disk"
+                    contentFit="contain"
+                    contentPosition="bottom right"
+                  />
+                  <Image
+                    source={require('../../assets/volo_technician_electrician.png')}
+                    style={{
+                      position: 'absolute',
+                      right: 4,
+                      bottom: 0,
+                      width: 145,
+                      height: 195,
+                    }}
+                    contentFit="contain"
+                    contentPosition="bottom right"
                   />
                 </View>
               ) : null}
@@ -625,27 +639,27 @@ export default function CustomerHomeScreen() {
                         key={cat.id}
                         onPress={() => handleCategoryPress(cat.id)}
                         activeOpacity={0.75}
-                        style={{ width: '25%' }}
-                        className="items-center px-1"
+                        style={{ width: filteredCategories.length <= 3 ? '33.33%' : '25%' }}
+                        className="items-center px-1.5 py-1"
                       >
                         <View
                           style={{ backgroundColor: styleInfo.bg }}
-                          className="w-13 h-13 rounded-2xl justify-center items-center mb-1.5 shadow-xs overflow-hidden"
+                          className="w-16 h-16 rounded-2xl justify-center items-center mb-2 shadow-xs overflow-hidden border border-slate-100"
                         >
                           {catImageUrl ? (
                             <Image
                               source={{ uri: catImageUrl }}
-                              style={{ width: 34, height: 34 }}
+                              style={{ width: 40, height: 40 }}
                               contentFit="contain"
                             />
                           ) : styleInfo.lib === 'MCI' ? (
-                            <MaterialCommunityIcons name={styleInfo.name as any} size={22} color={styleInfo.color} />
+                            <MaterialCommunityIcons name={styleInfo.name as any} size={28} color={styleInfo.color} />
                           ) : (
-                            <Ionicons name={styleInfo.name as any} size={22} color={styleInfo.color} />
+                            <Ionicons name={styleInfo.name as any} size={28} color={styleInfo.color} />
                           )}
                         </View>
                         <Text
-                          className="text-[#1E1535] text-[10px] font-extrabold text-center leading-3 capitalize"
+                          className="text-[#1E1535] text-xs font-black text-center leading-4 capitalize"
                           numberOfLines={2}
                         >
                           {cat.name}
@@ -714,7 +728,7 @@ export default function CustomerHomeScreen() {
                           </View>
 
                           <View className="flex-row items-center justify-between mt-3 pt-2.5 border-t border-[#F0EBFB]">
-                            <Text className="text-[#1E1535] text-sm font-black">₹{service.base_price}</Text>
+                            <Text className="text-[#1E1535] text-base font-black tracking-tight">₹{service.base_price}+</Text>
 
                             <View className="flex-row items-center gap-1.5">
                               {/* Instant Book Now button */}

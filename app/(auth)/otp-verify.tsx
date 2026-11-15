@@ -65,6 +65,70 @@ export default function OtpVerifyScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, []);
 
+  // Automatic OTP auto-read & auto-verification (Android Play Integrity / Web OTP API)
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && 'credentials' in navigator && (navigator as any).credentials?.get) {
+        const ac = new AbortController();
+        (navigator as any).credentials.get({
+          otp: { transport: ['sms'] },
+          signal: ac.signal,
+        }).then((otpObj: any) => {
+          if (otpObj?.code) {
+            const digits = otpObj.code.replace(/\D/g, '').slice(0, 6);
+            if (digits.length === 6) {
+              setOtp(digits.split(''));
+              verifyOtp(digits);
+            }
+          }
+        }).catch(() => {});
+        return () => ac.abort();
+      }
+      return;
+    }
+
+    let unsub: (() => void) | undefined;
+    (async () => {
+      try {
+        const nativeAuth = await getNativeAuth();
+        unsub = nativeAuth.onAuthStateChanged(async (firebaseUser) => {
+          if (firebaseUser && !loading) {
+            try {
+              setLoading(true);
+              const idToken = await firebaseUser.getIdToken();
+              const data = await verifyFirebaseToken(idToken, role, 'Mobile App', {
+                first_name: firstName,
+                last_name: lastName,
+                email: email,
+              });
+              await setAuth(data.token, data.refreshToken, data.user);
+              setAuthResponseData(data);
+              if (data.promptPinSetup || isForgotPin === 'true') {
+                setShowPinSetup(true);
+              } else {
+                if (data.user.role === 'worker') {
+                  router.replace(data.redirectTo === '/worker/kyc' || data.isNewUser ? '/(worker)/kyc' as any : '/(worker)/home');
+                } else {
+                  router.replace('/(customer)/home');
+                }
+              }
+            } catch (err: any) {
+              console.warn('[Auto-OTP] Automatic verification exchange error:', err);
+            } finally {
+              setLoading(false);
+            }
+          }
+        });
+      } catch (err) {
+        console.warn('[Auto-OTP] Native listener setup error:', err);
+      }
+    })();
+
+    return () => {
+      unsub?.();
+    };
+  }, [loading, confirmation]);
+
   const startResendTimer = () => {
     setResendTimer(30);
     timerRef.current = setInterval(() => {

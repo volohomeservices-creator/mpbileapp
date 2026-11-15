@@ -37,20 +37,22 @@ export default function CartScreen() {
   const itemTotal = getTotalPrice();
 
   const { data: pricingData } = useQuery({
-    queryKey: ['cart-pricing-breakdown', itemTotal],
+    queryKey: ['cart-pricing-breakdown', itemTotal, totalCount],
     queryFn: async () => {
-      return apiPost<any>('/api/pricing/calculate', { serviceAmount: itemTotal });
+      return apiPost<any>('/api/pricing/calculate', { serviceAmount: itemTotal, itemCount: totalCount });
     },
     enabled: itemTotal > 0,
   });
 
+  const comboDiscount = pricingData ? Number(pricingData.comboDiscount || 0) : 0;
+  const comboDiscountLabel = pricingData?.comboDiscountLabel || 'Combo Savings';
   const isPlatformFeeEnabled = pricingData ? pricingData.platformFeeEnabled : true;
-  const platformFee = pricingData ? Number(pricingData.platformFee || 0) : Math.round(itemTotal * 0.10);
+  const platformFee = pricingData ? Number(pricingData.platformFee || 0) : Math.round(Math.max(0, itemTotal - comboDiscount) * 0.10);
   const platformFeeLabel = pricingData?.platformFeeLabel || 'Platform Fee';
   const isTaxEnabled = pricingData ? pricingData.taxEnabled : true;
-  const taxes = pricingData ? Number(pricingData.taxAmount || 0) : Math.round(itemTotal * 0.05);
+  const taxes = pricingData ? Number(pricingData.taxAmount || 0) : Math.round(Math.max(0, itemTotal - comboDiscount) * 0.05);
   const taxLabel = pricingData?.taxLabel || `${t('bookings.feeTaxes')} (5%)`;
-  const grandTotal = itemTotal + (isPlatformFeeEnabled ? platformFee : 0) + (isTaxEnabled ? taxes : 0);
+  const grandTotal = Math.max(0, itemTotal - comboDiscount + (isPlatformFeeEnabled ? platformFee : 0) + (isTaxEnabled ? taxes : 0));
 
   const handleClearCart = () => {
     if (Platform.OS === 'web') {
@@ -240,6 +242,15 @@ export default function CartScreen() {
                 <Text className="text-text-secondary text-xs font-semibold">{t('bookings.itemTotal')}</Text>
                 <Text className="text-text-primary text-xs font-black">₹{itemTotal}</Text>
               </View>
+
+              {comboDiscount > 0 && (
+                <View className="flex-row justify-between mb-2 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
+                  <Text className="text-emerald-800 text-xs font-bold">
+                    🎉 {comboDiscountLabel}
+                  </Text>
+                  <Text className="text-emerald-700 text-xs font-black">-₹{comboDiscount}</Text>
+                </View>
+              )}
 
               {isPlatformFeeEnabled && platformFee > 0 && (
                 <View className="flex-row justify-between mb-2">

@@ -490,29 +490,76 @@ export default function CreateBookingScreen() {
     }
   }, []);
 
-  // Image Attachment Picker
+  // Image Attachment Picker (Direct Camera & Gallery options)
   const handlePickImage = async () => {
     if (attachedImages.length >= 3) {
       showAlert('Limit Reached', 'You can attach up to 3 photos of the issue.');
       return;
     }
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        showAlert('Permission Needed', 'Please allow camera / gallery access to upload photos.');
-        return;
+
+    const openCamera = async () => {
+      try {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          showAlert('Permission Needed', 'Camera permission is required to capture photos of the issue.');
+          return;
+        }
+        const result = await ImagePicker.launchCameraAsync({
+          allowsEditing: true,
+          quality: 0.7,
+        });
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          setAttachedImages((prev) => [...prev, result.assets[0].uri].slice(0, 3));
+        }
+      } catch (err) {
+        console.warn('Camera capture error:', err);
       }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.7,
-      });
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setAttachedImages((prev) => [...prev, result.assets[0].uri].slice(0, 3));
+    };
+
+    const openGallery = async () => {
+      try {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          showAlert('Permission Needed', 'Photo gallery permission is required to select photos.');
+          return;
+        }
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          quality: 0.7,
+        });
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          setAttachedImages((prev) => [...prev, result.assets[0].uri].slice(0, 3));
+        }
+      } catch (err) {
+        console.warn('Gallery picker error:', err);
       }
-    } catch (err) {
-      console.warn('Image picker error:', err);
+    };
+
+    if (Platform.OS === 'web') {
+      openGallery();
+      return;
     }
+
+    Alert.alert(
+      'Attach Problem Photo',
+      'Directly capture the issue or choose an existing photo:',
+      [
+        {
+          text: '📸 Take Photo (Camera)',
+          onPress: openCamera,
+        },
+        {
+          text: '🖼️ Choose from Gallery',
+          onPress: openGallery,
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ],
+      { cancelable: true }
+    );
   };
 
   const handleRemoveImage = (index: number) => {
@@ -528,27 +575,32 @@ export default function CreateBookingScreen() {
     ? getTotalPrice()
     : Number(selectedItemData?.base_price ?? 0);
 
+  const totalItemCount = cartItems.length > 0 ? getTotalCount() : 1;
+
   // Authoritative backend pricing breakdown
   const { data: pricingData } = useQuery({
-    queryKey: ['pricing-breakdown', rawItemTotal, effectiveServiceId],
+    queryKey: ['pricing-breakdown', rawItemTotal, effectiveServiceId, totalItemCount],
     queryFn: async () => {
       return apiPost<any>('/api/pricing/calculate', {
         serviceAmount: rawItemTotal,
         serviceId: effectiveServiceId,
+        itemCount: totalItemCount,
       });
     },
     enabled: rawItemTotal > 0,
   });
 
+  const comboDiscount = pricingData ? Number(pricingData.comboDiscount || 0) : 0;
+  const comboDiscountLabel = pricingData?.comboDiscountLabel || 'Combo Savings';
   const isPlatformFeeEnabled = pricingData ? pricingData.platformFeeEnabled : true;
-  const platformFee = pricingData ? Number(pricingData.platformFee || 0) : Math.round(rawItemTotal * 0.10);
+  const platformFee = pricingData ? Number(pricingData.platformFee || 0) : Math.round(Math.max(0, rawItemTotal - comboDiscount) * 0.10);
   const platformFeeLabel = pricingData?.platformFeeLabel || 'Platform Fee';
   const isTaxEnabled = pricingData ? pricingData.taxEnabled : true;
-  const tax = pricingData ? Number(pricingData.taxAmount || 0) : Math.round(rawItemTotal * 0.05);
+  const tax = pricingData ? Number(pricingData.taxAmount || 0) : Math.round(Math.max(0, rawItemTotal - comboDiscount) * 0.05);
   const taxLabel = pricingData?.taxLabel || 'GST (5%)';
   const discountAmount = promoCodeApplied ? Number(promoCodeApplied.discount_amount || 0) : 0;
   const tipAmount = selectedTip || 0;
-  const grandTotal = Math.max(0, rawItemTotal + (isPlatformFeeEnabled ? platformFee : 0) + (isTaxEnabled ? tax : 0) - discountAmount + tipAmount);
+  const grandTotal = Math.max(0, rawItemTotal - comboDiscount + (isPlatformFeeEnabled ? platformFee : 0) + (isTaxEnabled ? tax : 0) - discountAmount + tipAmount);
   const isWalletInsufficient = paymentMode === 'WALLET' && walletBalance < grandTotal;
 
   // Promo code validation
@@ -759,6 +811,7 @@ export default function CreateBookingScreen() {
       notes: notes.trim() || undefined,
       scheduled_at: scheduledAtVal,
       promo_code: promoCodeApplied?.code || undefined,
+      item_count: totalItemCount,
     };
 
     const validation = CreateBookingSchema.safeParse({
@@ -1249,8 +1302,8 @@ export default function CreateBookingScreen() {
 
                         {/* Bottom Row: Price & Add / Stepper */}
                         <View className="pt-2 border-t border-slate-100 flex-row items-center justify-between mt-auto">
-                          <Text className="text-[#1E1535] text-sm font-black">
-                            ₹{item.base_price}
+                          <Text className="text-[#1E1535] text-base font-black tracking-tight">
+                            ₹{item.base_price}+
                           </Text>
 
                           {cartQty > 0 ? (
@@ -2067,6 +2120,15 @@ export default function CreateBookingScreen() {
               <Text className="text-text-secondary text-xs font-semibold">{t('bookings.itemTotal')}</Text>
               <Text className="text-text-primary text-xs font-black">₹{rawItemTotal}</Text>
             </View>
+
+            {comboDiscount > 0 && (
+              <View className="flex-row justify-between mb-2 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
+                <Text className="text-emerald-800 text-xs font-bold">
+                  🎉 {comboDiscountLabel}
+                </Text>
+                <Text className="text-emerald-700 text-xs font-black">-₹{comboDiscount}</Text>
+              </View>
+            )}
 
             {isPlatformFeeEnabled && platformFee > 0 && (
               <View className="flex-row justify-between mb-2">
